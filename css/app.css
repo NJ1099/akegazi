@@ -201,8 +201,38 @@ a { color: inherit; }
 .trip-head__meta { color: var(--text-3); font-size: 13px; margin-top: 2px; display: flex; gap: 10px; flex-wrap: wrap; }
 
 /* ===== 홈: Day 카드 ===== */
+/* ===== 홈: 여행 카드 ===== */
+.trip-card {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%; text-align: left;
+  color: var(--text);
+  background: linear-gradient(180deg, var(--surface), var(--surface-2));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 12px;
+  position: relative;
+  transition: border-color .15s, transform .05s;
+}
+.trip-card:hover { border-color: var(--line-strong); }
+.trip-card:active { transform: scale(0.995); }
+.trip-card__main { flex: 1 1 auto; min-width: 0; }
+.trip-card__title { font-size: 18px; font-weight: 850; letter-spacing: -.02em; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 26px; }
+.trip-card__meta { color: var(--text-2); font-size: 12.5px; margin-top: 3px; }
+.trip-card__go { color: var(--text-3); font-size: 24px; font-weight: 700; line-height: 1; flex: 0 0 auto; }
+.card-del {
+  position: absolute; top: 10px; right: 10px;
+  width: 26px; height: 26px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--bg-2);
+  color: var(--text-3); font-size: 12px; line-height: 1;
+  display: grid; place-items: center;
+}
+.card-del:hover { color: var(--c-red); border-color: rgba(244,63,94,.4); background: var(--c-red-bg); }
+
+/* ===== 여행 상세: Day 카드 ===== */
 .day-card {
   display: block;
+  color: var(--text);                          /* 버튼 기본 색 상속 방지 (Day N 가독성) */
   background: linear-gradient(180deg, var(--surface), var(--surface-2));
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -235,10 +265,17 @@ a { color: inherit; }
 /* ===== Day 상세: 헤더 ===== */
 .day-hero {
   margin-bottom: 14px;
+  display: flex; align-items: flex-start; gap: 10px;
 }
+.day-hero__main { flex: 1 1 auto; min-width: 0; }
 .day-hero__eyebrow { color: var(--text-3); font-size: 12.5px; font-weight: 700; }
-.day-hero__title { font-size: 22px; font-weight: 850; letter-spacing: -0.03em; margin: 2px 0 0; }
+.day-hero__title { font-size: 22px; font-weight: 850; letter-spacing: -0.03em; margin: 2px 0 0; color: var(--text); }
 .day-hero__date { color: var(--text-2); font-size: 13.5px; margin-top: 3px; }
+.day-hero__edit {
+  flex: 0 0 auto; border: 1px solid var(--line-strong); background: var(--surface);
+  color: var(--text-2); font-size: 12px; font-weight: 700; padding: 8px 11px; border-radius: 9px;
+}
+.day-hero__edit:hover { color: var(--text); background: var(--surface-hi); }
 
 /* 날씨 배너 */
 .wx {
@@ -528,10 +565,23 @@ iframe.day-map { border: 0; display: block; }
 .spin { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line-strong); border-top-color: var(--brand); border-radius: 999px; animation: spin .7s linear infinite; vertical-align: -2px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* 드래그 정렬 핸들 */
-.stop__drag { cursor: grab; color: var(--text-3); font-size: 14px; user-select: none; padding: 0 2px; }
-.tl-item.dragging { opacity: .5; }
-.tl-item.drag-over .stop { border-color: var(--brand); }
+/* 드래그 정렬 핸들 + 인라인 삭제 */
+.stop__drag {
+  cursor: grab; color: var(--text-3); font-size: 16px; line-height: 1;
+  user-select: none; padding: 2px 4px 2px 0; touch-action: none;
+  flex: 0 0 auto; align-self: flex-start;
+}
+.stop__drag:active { cursor: grabbing; color: var(--text); }
+.stop__drag:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 6px; color: var(--text); }
+.stop__del {
+  flex: 0 0 auto; align-self: flex-start;
+  width: 24px; height: 24px; border: none; background: transparent;
+  color: var(--text-3); font-size: 13px; border-radius: 7px;
+  display: grid; place-items: center;
+}
+.stop__del:hover { color: var(--c-red); background: var(--c-red-bg); }
+.tl-item.dragging { opacity: .55; }
+.tl-item.dragging .stop { border-color: var(--brand); box-shadow: 0 8px 24px rgba(0,0,0,.5); }
 
 @media (max-width: 380px) {
   .view { padding: 14px 12px 120px; }
@@ -546,6 +596,7 @@ iframe.day-map { border: 0; display: block; }
 @media (pointer: coarse) {
   .iconbtn, .segmented button, .btn--sm, .chip { min-height: 44px; }
   .appbar__back { width: 44px; height: 44px; }
+  .stop__drag, .stop__del, .card-del, .day-hero__edit { min-width: 44px; min-height: 44px; }
 }
 
 /* 접근성: 포커스 가시화 */

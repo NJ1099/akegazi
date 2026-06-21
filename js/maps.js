@@ -4,11 +4,11 @@
   var hasCoord = TP.geo.hasCoord;
   var DOT = ["#fb7185", "#fb923c", "#fbbf24", "#4ade80", "#34d399", "#60a5fa", "#a78bfa", "#f472b6"];
 
-  var TILE = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";  // 권장 단일 호스트(레거시 a/b/c 서브도메인 회피)
-  var ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+  var TILE = "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png";  // CARTO Voyager (무료·고품질)
+  var ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
   function baseLayer() {
-    return L.tileLayer(TILE, { maxZoom: 19, attribution: ATTR });
+    return L.tileLayer(TILE, { maxZoom: 20, subdomains: "abcd", attribution: ATTR });
   }
 
   /* 동선 지도: stops(좌표 있는 것만 번호 매김) */

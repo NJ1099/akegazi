@@ -79,13 +79,14 @@
   }
 
   function buildURL(trip) {
-    var base = location.origin + location.pathname + location.search;
+    var base = location.origin + location.pathname;   // 쿼리스트링 전파 방지
     return base + "#trip=" + encode(trip);
   }
 
   /* ---- 공유 실행 ---- */
   function shareTrip(trip) {
-    trip = trip || TP.store.trip();
+    trip = trip || TP.store.activeTrip();
+    if (!trip) { U.toast("공유할 여행을 먼저 선택하세요"); return; }
     if (!trip.days || !trip.days.length) { U.toast("공유할 일정이 없어요. 먼저 날짜와 장소를 추가하세요."); return; }
     var url = buildURL(trip);
     if (url.length > 16000) { U.toast("일정이 너무 커서 링크가 길어요. ‘내보내기(JSON)’로 공유하세요."); return; }
@@ -122,18 +123,17 @@
     TP.editor.modal(function (box, close) {
       box.appendChild(el("div.modal__title", { text: "📨 공유받은 일정" }));
       box.appendChild(el("div.modal__sub", { text: (trip.title || "여행 일정") + " · " + dayCount + "일 · " + stopCount + "곳" }));
-      box.appendChild(el("p", { text: "이 일정을 내 ‘어케가지’로 불러올까요? 현재 작업 중인 일정이 있으면 덮어쓰니, 필요하면 먼저 ‘내보내기’로 백업하세요.",
+      box.appendChild(el("p", { text: "이 일정을 내 ‘어케가지’ 여행 목록에 새 여행으로 추가할까요? 기존 여행은 그대로 유지됩니다.",
         style: { color: "var(--text-2)", fontSize: "13px", lineHeight: "1.6", margin: "4px 0 4px" } }));
       box.appendChild(el("div.modal__actions", null, [
         el("button.btn.btn--block", {
           onclick: function () {
-            if (TP.store.trip().days.length && !confirm("현재 일정을 공유받은 일정으로 덮어씁니다. 계속할까요?")) return;
-            TP.store.replaceTrip(trip);
+            var t = TP.store.addTripData(trip);
             close();
-            location.hash = "#/";
-            U.toast("공유된 일정을 불러왔어요");
+            location.hash = "#/trip/" + t.id;
+            U.toast("공유된 여행을 추가했어요");
           }
-        }, ["불러오기"]),
+        }, ["여행으로 추가"]),
         el("button.btn.btn--block.btn--ghost", { onclick: close }, ["취소"])
       ]));
     });

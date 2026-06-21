@@ -57,7 +57,7 @@
   }
 
   /* ---- Stop 카드 ---- */
-  function stopCard(day, stop, prevStop, ctx) {
+  function stopCard(day, stop, prevStop, ctx, idx) {
     var ci = closingInfo(stop, day);
     var card = el("div.stop", { dataset: { stop: stop.id } });
     if (stop.fixed) card.classList.add("is-fixed");
@@ -68,10 +68,26 @@
       el("div.stop__title", { text: stop.title || "(제목 없음)" }),
       stop.subtitle ? el("div.stop__sub", { text: stop.subtitle }) : null
     ]);
+    var dragHandle = (ctx && ctx.canReorder) ? el("div.stop__drag", {
+      title: "드래그 또는 ↑↓ 키로 순서 변경", role: "button", tabindex: "0",
+      "aria-label": (stop.title || "장소") + " 순서 변경",
+      onclick: function (e) { e.stopPropagation(); },
+      onkeydown: function (e) {
+        if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+          e.preventDefault(); e.stopPropagation();
+          TP.store.moveStop(day.id, idx, e.key === "ArrowUp" ? idx - 1 : idx + 1);
+        }
+      }
+    }, ["⠿"]) : null;
     var head = el("div.stop__head", null, [
+      dragHandle,
       el("div.stop__icon", { text: typeIcon(stop) }),
       titles,
-      stop.durationLabel ? el("div.stop__dur", null, ["⏱ " + stop.durationLabel]) : null
+      stop.durationLabel ? el("div.stop__dur", null, ["⏱ " + stop.durationLabel]) : null,
+      el("button.stop__del", {
+        title: "삭제", "aria-label": (stop.title || "장소") + " 삭제",
+        onclick: function (e) { e.stopPropagation(); if (window.confirm("‘" + (stop.title || "이 장소") + "’ 을(를) 삭제할까요?")) TP.store.removeStop(day.id, stop.id); }
+      }, ["✕"])
     ]);
     card.appendChild(head);
 
@@ -153,12 +169,13 @@
         el("div.empty__desc", { text: "아래 ‘장소 추가’로 가고 싶은 곳·먹고 싶은 곳·숙소·공항을 넣어보세요." })
       ]);
     }
+    ctx.canReorder = day.stops.length > 1;
     day.stops.forEach(function (s, i) {
       var color = TP.maps.DOT[(ctx.dayIndex || 0) % TP.maps.DOT.length];
       var item = el("div.tl-item", { dataset: { stop: s.id } }, [
         el("div.tl-item__time", { text: s.time || dashTime(i) }),
         el("div.tl-item__dot", { style: { "--dot": color, background: color, boxShadow: "0 0 0 4px var(--bg-2), 0 0 12px " + color } }),
-        stopCard(day, s, i > 0 ? day.stops[i - 1] : null, ctx)
+        stopCard(day, s, i > 0 ? day.stops[i - 1] : null, ctx, i)
       ]);
       wrap.appendChild(item);
     });

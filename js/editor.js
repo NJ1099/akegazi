@@ -226,7 +226,7 @@
 
       if (existing) {
         box.appendChild(el("button.btn.btn--block.btn--danger.modal__delete", {
-          onclick: function () { store.removeStop(dayId, stopId); close(); U.toast("삭제했어요"); }
+          onclick: function () { if (!window.confirm("‘" + (f.title || "이 장소") + "’ 을(를) 삭제할까요?")) return; store.removeStop(dayId, stopId); close(); U.toast("삭제했어요"); }
         }, ["이 장소 삭제"]));
       }
     }, function () {
@@ -272,7 +272,7 @@
         box.appendChild(el("button.btn.btn--block.btn--danger.modal__delete", {
           onclick: function () {
             if (existing.stops.length && !confirm("이 날의 장소 " + existing.stops.length + "곳도 함께 삭제됩니다. 계속할까요?")) return;
-            store.removeDay(dayId); close(); location.hash = "#/";
+            store.removeDay(dayId); close(); location.hash = "#/trip/" + store.activeId();
           }
         }, ["이 날짜 삭제"]));
       }

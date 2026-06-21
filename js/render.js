@@ -119,8 +119,16 @@
     ]);
     card.appendChild(actions);
 
-    // 카드 클릭 → 편집
-    card.addEventListener("click", function () { if (ctx && ctx.onEdit) ctx.onEdit(stop.id); });
+    // 카드 클릭/키보드 → 편집 (접근성: role/tabindex/Enter·Space)
+    card.setAttribute("role", "button");
+    card.setAttribute("tabindex", "0");
+    card.setAttribute("aria-label", (stop.title || "장소") + " 편집");
+    function fireEdit() { if (ctx && ctx.onEdit) ctx.onEdit(stop.id); }
+    card.addEventListener("click", fireEdit);
+    card.addEventListener("keydown", function (e) {
+      if (e.target !== card) return;            // 내부 길찾기/지도 버튼의 키 이벤트는 무시
+      if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") { e.preventDefault(); fireEdit(); }
+    });
     return card;
   }
 

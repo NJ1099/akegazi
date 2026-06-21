@@ -35,17 +35,19 @@
       return Promise.resolve({ available: false, reason: "위치 정보 필요" });
     }
     var key = date + "|" + lat.toFixed(2) + "|" + lon.toFixed(2);
-    if (mem[key]) return Promise.resolve(mem[key]);
+    if (mem[key] && (Date.now() - mem[key]._t) < TTL) return Promise.resolve(mem[key].v);
     var cached = lsCache[key];
-    if (cached && (Date.now() - cached._t) < TTL) { mem[key] = cached.v; return Promise.resolve(cached.v); }
+    if (cached && (Date.now() - cached._t) < TTL) { mem[key] = cached; return Promise.resolve(cached.v); }
 
     var off = TP.util.daysFromToday(date);
     if (off == null) return Promise.resolve({ available: false, reason: "날짜 오류" });
 
+    // 최근 과거(어제~5일 전)는 archive(ERA5, 약 5일 지연)에 데이터가 비므로 forecast로 조회.
+    // forecast 엔드포인트는 start_date만으로 최근 과거 단일일을 정상 반환한다(past_days 병용 시 400).
     var host, isArchive = false;
-    if (off >= 0 && off <= 15) host = "https://api.open-meteo.com/v1/forecast";
-    else if (off < 0) { host = "https://archive-api.open-meteo.com/v1/archive"; isArchive = true; }
-    else return finish(key, { available: false, reason: "여행일이 16일 이후라 예보가 아직 없어요" });
+    if (off >= -5 && off <= 15) host = "https://api.open-meteo.com/v1/forecast";
+    else if (off < -5) { host = "https://archive-api.open-meteo.com/v1/archive"; isArchive = true; }
+    else return Promise.resolve({ available: false, reason: "여행일이 16일 이후라 예보가 아직 없어요" }); // 캐시 안 함
 
     var daily = "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum" +
                 (isArchive ? "" : ",precipitation_probability_max");
@@ -54,7 +56,7 @@
 
     return fetchJSON(url, { timeout: 9000 }).then(function (j) {
       var d = j && j.daily;
-      if (!d || !d.time || !d.time.length) return finish(key, { available: false, reason: "데이터 없음" });
+      if (!d || !d.time || !d.time.length) return { available: false, reason: "데이터 없음" }; // 빈 응답은 캐시 안 함
       var code = num(d.weather_code), tmax = num(d.temperature_2m_max), tmin = num(d.temperature_2m_min);
       var precip = num(d.precipitation_sum), pop = d.precipitation_probability_max ? num(d.precipitation_probability_max) : null;
       var m = codeMeta(code);
@@ -70,8 +72,9 @@
     function num(a) { return (a && a.length != null) ? a[0] : a; }
   }
   function finish(key, v) {
-    mem[key] = v;
-    lsCache[key] = { _t: Date.now(), v: v };
+    var entry = { _t: Date.now(), v: v };
+    mem[key] = entry;
+    lsCache[key] = entry;
     saveLS();
     return v;
   }

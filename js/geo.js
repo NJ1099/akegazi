@@ -20,7 +20,13 @@
             Math.sin(dLon / 2) * Math.sin(dLon / 2);
     return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
   }
-  function hasCoord(s) { return s && typeof s.lat === "number" && typeof s.lon === "number" && isFinite(s.lat) && isFinite(s.lon); }
+  function hasCoord(s) {
+    return s && typeof s.lat === "number" && typeof s.lon === "number" &&
+           isFinite(s.lat) && isFinite(s.lon) &&
+           s.lat >= -90 && s.lat <= 90 && s.lon >= -180 && s.lon <= 180;
+  }
+  function normLat(v) { v = parseFloat(v); return (isFinite(v) && v >= -90 && v <= 90) ? v : null; }
+  function normLon(v) { v = parseFloat(v); return (isFinite(v) && v >= -180 && v <= 180) ? v : null; }
   function fmtDist(m) {
     if (!isFinite(m)) return "—";
     return m < 1000 ? Math.round(m) + "m" : (m / 1000).toFixed(m < 10000 ? 1 : 0) + "km";
@@ -36,7 +42,7 @@
         return {
           name: shortName(r),
           address: r.display_name || "",
-          lat: parseFloat(r.lat), lon: parseFloat(r.lon),
+          lat: normLat(r.lat), lon: normLon(r.lon),
           type: r.type, category: r.category
         };
       });
@@ -57,41 +63,68 @@
         return {
           name: r.name,
           address: [r.name, r.admin1, r.country].filter(Boolean).join(", "),
-          lat: r.latitude, lon: r.longitude
+          lat: normLat(r.latitude), lon: normLon(r.longitude)
         };
       });
     }).catch(function () { return []; });
   }
 
   /* ---------- 동선 최적화 ----------
-     좌표가 있는 stop들만 대상으로, 좌표 없는 stop은 원래 자리 유지.
-     앵커: 공항/숙소/고정(fixed) 은 양 끝에 고정.  */
+     좌표 있는 stop만 대상(좌표 없는 stop은 원래 자리 유지).
+     앵커(공항/숙소/고정)는 '모두' 원래 위치에 고정하고,
+     인접 앵커 사이의 비앵커 구간만 각각 최적화한다.  */
   function optimizeOrder(stops) {
     var idxGeo = [];                 // 원본 배열에서 좌표 있는 인덱스
     stops.forEach(function (s, i) { if (hasCoord(s)) idxGeo.push(i); });
     if (idxGeo.length < 3) {
-      return { order: stops.map(function (s) { return s.id; }), improved: false, before: pathLen(stops.map(function(s){return s;})), after: pathLen(stops) };
+      return { order: stops.map(function (s) { return s.id; }), improved: false, reason: "too-few-coords", geoCount: idxGeo.length, before: 0, after: 0 };
     }
     var geo = idxGeo.map(function (i) { return stops[i]; });
     var n = geo.length;
-
-    var lockStart = isAnchor(geo[0]) ? 0 : -1;
-    var lockEnd = isAnchor(geo[n - 1]) ? n - 1 : -1;
-
     var before = pathLen(geo);
-    var perm = nearestNeighbor(geo, lockStart >= 0 ? 0 : 0);
-    perm = twoOpt(geo, perm, lockStart >= 0, lockEnd >= 0);
-    var optimized = perm.map(function (k) { return geo[k]; });
-    var after = pathLen(optimized);
 
-    // 더 나빠지면 원본 유지
-    if (after >= before - 1) {
-      return { order: stops.map(function (s) { return s.id; }), improved: false, before: before, after: before };
+    var optimized = geo.slice();
+    var segStart = 0;
+    for (var p = 0; p <= n; p++) {
+      var atAnchor = (p === n) || isAnchor(geo[p]);
+      if (atAnchor) {
+        var lo = segStart, hi = p - 1;                       // [lo..hi] = 비앵커 구간
+        if (hi - lo >= 1) {
+          var prev = (lo > 0) ? optimized[lo - 1] : null;    // 앞 앵커(고정 단자)
+          var next = (p < n) ? geo[p] : null;                // 뒤 앵커(고정 단자)
+          var ordered = optimizeSegment(optimized.slice(lo, hi + 1), prev, next);
+          for (var q = 0; q < ordered.length; q++) optimized[lo + q] = ordered[q];
+        }
+        segStart = p + 1;
+      }
     }
-    // 좌표 stop들을 최적 순서로 원래 슬롯에 재배치
+
+    var after = pathLen(optimized);
+    if (after >= before - 1) {
+      return { order: stops.map(function (s) { return s.id; }), improved: false, reason: "already-optimal", before: before, after: before };
+    }
     var result = stops.slice();
     idxGeo.forEach(function (origIdx, k) { result[origIdx] = optimized[k]; });
     return { order: result.map(function (s) { return s.id; }), improved: true, before: before, after: after };
+  }
+
+  // 앞/뒤 앵커(prev/next)를 고정 단자로 끼워, 그 사이 비앵커 stop들만 NN + 2-opt
+  function optimizeSegment(seg, prev, next) {
+    if (seg.length < 2) return seg;
+    var nodes = seg.slice();
+    if (prev) nodes.unshift(prev);
+    if (next) nodes.push(next);
+    var lockStart = !!prev, lockEnd = !!next;
+    var perm = nearestNeighbor(nodes, 0);
+    if (lockEnd) {                                  // 끝 앵커를 경로 맨 끝으로 강제 정렬
+      var endK = nodes.length - 1, ai = perm.indexOf(endK);
+      if (ai >= 0 && ai !== perm.length - 1) { perm.splice(ai, 1); perm.push(endK); }
+    }
+    perm = twoOpt(nodes, perm, lockStart, lockEnd);
+    var out = perm.map(function (k) { return nodes[k]; });
+    if (prev) out.shift();
+    if (next) out.pop();
+    return out;
   }
 
   function isAnchor(s) { return s.fixed || s.type === "airport" || s.type === "lodging"; }
@@ -128,10 +161,11 @@
       var jMax = lockEnd ? n - 2 : n - 1;
       for (var i = iMin; i < n - 1; i++) {
         for (var j = i + 1; j <= jMax; j++) {
-          var a = path[i - 1], b = path[i], c = path[j], d2 = path[j + 1];
-          var before = dist(a, b) + (d2 !== undefined ? dist(c, d2) : 0);
-          var after = dist(a, c) + (d2 !== undefined ? dist(b, d2) : 0);
-          if (after + 0.01 < before) {
+          var hasA = i > 0;                       // 열린 경로 시작 노드 앞에는 끊을 엣지가 없음
+          var b = path[i], c = path[j], d2 = path[j + 1];
+          var beforeD = (hasA ? dist(path[i - 1], b) : 0) + (d2 !== undefined ? dist(c, d2) : 0);
+          var afterD = (hasA ? dist(path[i - 1], c) : 0) + (d2 !== undefined ? dist(b, d2) : 0);
+          if (afterD + 0.01 < beforeD) {
             reverse(path, i, j); improved = true;
           }
         }
@@ -156,19 +190,21 @@
     p.push("travelmode=" + (mode || "transit"));
     return base + "&" + p.join("&");
   }
-  // 전체 동선 (origin + waypoints + destination)
+  // 전체 동선 (origin + waypoints + destination) → { url, dropped, total }
   function multiDirURL(stops, mode) {
     var pts = stops.filter(function (s) { return locToken(s); });
-    if (pts.length < 2) return pts.length === 1 ? searchURL(pts[0]) : null;
+    if (pts.length < 2) return { url: pts.length === 1 ? searchURL(pts[0]) : null, dropped: 0, total: pts.length };
     var origin = pts[0], dest = pts[pts.length - 1];
-    var mids = pts.slice(1, -1).slice(0, 9); // 구글맵 URL은 waypoint ~9개 제한
+    var allMids = pts.slice(1, -1);
+    var mids = allMids.slice(0, 9);            // 구글맵 URL은 waypoint ~9개 제한
+    var dropped = allMids.length - mids.length;
     var p = ["origin=" + encodeURIComponent(locToken(origin)),
              "destination=" + encodeURIComponent(locToken(dest)),
              "travelmode=" + (mode || "transit")];
     if (mids.length) {
       p.push("waypoints=" + mids.map(function (s) { return encodeURIComponent(locToken(s)); }).join("%7C"));
     }
-    return "https://www.google.com/maps/dir/?api=1&" + p.join("&");
+    return { url: "https://www.google.com/maps/dir/?api=1&" + p.join("&"), dropped: dropped, total: pts.length };
   }
   // 지도(위치 보기)
   function searchURL(s) {
@@ -177,6 +213,7 @@
 
   TP.geo = {
     haversine: haversine, hasCoord: hasCoord, fmtDist: fmtDist,
+    normLat: normLat, normLon: normLon,
     geocode: geocode, optimizeOrder: optimizeOrder, pathLen: pathLen,
     dirURL: dirURL, multiDirURL: multiDirURL, searchURL: searchURL
   };

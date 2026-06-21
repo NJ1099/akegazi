@@ -10,21 +10,45 @@
   var RESV = [["none", "불필요"], ["recommended", "권장"], ["required", "필수"], ["done", "완료"]];
 
   /* ---------- 공용 모달 ---------- */
-  function modal(buildContent) {
+  function modal(buildContent, onClose) {
     var root = document.getElementById("modalRoot");
-    var box = el("div.modal");
+    var prevFocus = document.activeElement;
+    var prevOverflow = document.body.style.overflow;
+    var closed = false;
+    var box = el("div.modal", { role: "dialog", "aria-modal": "true", tabindex: "-1" });
     var back = el("div.modal-back", {
       onclick: function (e) { if (e.target === back) close(); }
     }, [box]);
     box.appendChild(el("div.modal__grip"));
-    function close() {
-      document.removeEventListener("keydown", onKey);
-      if (back.parentNode) back.parentNode.removeChild(back);
+
+    function focusables() {
+      return U.$$('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])', box);
     }
-    function onKey(e) { if (e.key === "Escape") close(); }
+    function close() {
+      if (closed) return;
+      closed = true;
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;            // 배경 스크롤 복원
+      if (typeof onClose === "function") { try { onClose(); } catch (e) {} }
+      if (back.parentNode) back.parentNode.removeChild(back);
+      if (prevFocus && prevFocus.focus) { try { prevFocus.focus(); } catch (e) {} } // 트리거로 포커스 복원
+    }
+    function onKey(e) {
+      if (e.key === "Escape") { close(); return; }
+      if (e.key !== "Tab") return;                            // Tab 포커스 트랩
+      var f = focusables();
+      if (!f.length) { e.preventDefault(); box.focus(); return; }
+      var first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
     document.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";                  // 배경 스크롤 잠금
     buildContent(box, close);
     root.appendChild(back);
+    var title = box.querySelector(".modal__title");           // 제목을 aria-labelledby로 연결
+    if (title) { if (!title.id) title.id = U.uid(); box.setAttribute("aria-labelledby", title.id); }
+    (focusables()[0] || box).focus();                         // 첫 입력에 포커스
     return close;
   }
 
@@ -205,6 +229,8 @@
           onclick: function () { store.removeStop(dayId, stopId); close(); U.toast("삭제했어요"); }
         }, ["이 장소 삭제"]));
       }
+    }, function () {
+      if (pickMap) { TP.maps.destroy(pickMap); pickMap = null; }   // 모달 종료 시 picker 지도 정리(누수 방지)
     });
   }
 

@@ -4,7 +4,7 @@
   var hasCoord = TP.geo.hasCoord;
   var DOT = ["#fb7185", "#fb923c", "#fbbf24", "#4ade80", "#34d399", "#60a5fa", "#a78bfa", "#f472b6"];
 
-  var TILE = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+  var TILE = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";  // 권장 단일 호스트(레거시 a/b/c 서브도메인 회피)
   var ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
 
   function baseLayer() {

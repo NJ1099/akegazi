@@ -181,6 +181,7 @@
   }
 
   function renderDayMap(day, idx, target) {
+    var myEpoch = epoch;
     target.innerHTML = "";
     var geoStops = day.stops.filter(geo.hasCoord);
     if (!geoStops.length) {
@@ -207,20 +208,31 @@
     });
     target.appendChild(legend);
 
-    setTimeout(function () { liveMap = TP.maps.renderRoute(mapDiv, day.stops, { color: color }); }, 0);
+    setTimeout(function () {
+      if (myEpoch !== epoch || !mapDiv.isConnected) return;       // 더 새로운 render가 돌았으면 생성 건너뜀
+      var map = TP.maps.renderRoute(mapDiv, day.stops, { color: color });
+      if (myEpoch !== epoch) { TP.maps.destroy(map); return; }     // 생성과 epoch 변경 경합 방어
+      liveMap = map;
+    }, 0);
   }
 
   /* ---------- 액션 ---------- */
   function optimize(day) {
     var res = geo.optimizeOrder(day.stops);
-    if (!res.improved) { U.toast("이미 효율적이거나, 좌표 있는 장소가 3곳 이상 필요해요"); return; }
+    if (!res.improved) {
+      U.toast(res.reason === "too-few-coords"
+        ? "동선 최적화는 좌표 있는 장소 3곳 이상에서 동작해요"
+        : "이미 효율적인 동선이에요");
+      return;
+    }
     store.reorderStops(day.id, res.order);
     U.toast("동선 최적화: " + geo.fmtDist(res.before) + " → " + geo.fmtDist(res.after));
   }
   function allDirections(day) {
-    var url = geo.multiDirURL(day.stops, "transit");
-    if (!url) { U.toast("좌표가 있는 장소가 2곳 이상 필요해요"); return; }
-    window.open(url, "_blank", "noopener");
+    var r = geo.multiDirURL(day.stops, "transit");
+    if (!r || !r.url) { U.toast("좌표가 있는 장소가 2곳 이상 필요해요"); return; }
+    if (r.dropped > 0) U.toast("경유지가 많아 앞 " + (r.total - r.dropped) + "곳만 길찾기에 포함돼요 (" + r.dropped + "곳 생략)");
+    window.open(r.url, "_blank", "noopener");
   }
 
   /* ---------- 가져오기/내보내기/예시 ---------- */

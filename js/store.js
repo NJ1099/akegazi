@@ -26,13 +26,18 @@
   }
 
   function defaultStop(partial) {
-    return Object.assign({
+    var s = Object.assign({
       id: uid(), type: "attraction", title: "", subtitle: "", address: "",
       lat: null, lon: null, time: "", durationLabel: "",
       indoor: null, openHours: "", closingDays: [], closingNote: "",
       reservation: "none", reservationNote: "", fixed: false, photoSpot: false,
       note: "", cost: ""
     }, partial || {});
+    // 가져오기/손상 데이터 방어: 좌표 범위 정규화 + closingDays 배열 보장
+    s.lat = (typeof s.lat === "number" && isFinite(s.lat) && s.lat >= -90 && s.lat <= 90) ? s.lat : null;
+    s.lon = (typeof s.lon === "number" && isFinite(s.lon) && s.lon >= -180 && s.lon <= 180) ? s.lon : null;
+    if (!Array.isArray(s.closingDays)) s.closingDays = [];
+    return s;
   }
   function defaultDay(partial) {
     return Object.assign({ id: uid(), date: "", label: "", stops: [] }, partial || {});
@@ -57,6 +62,7 @@
     if (!Array.isArray(trip.days)) trip.days = [];
     trip.days.forEach(function (d) {
       if (!d.id) d.id = uid();
+      if (d.date && !TP.util.parseDate(d.date)) d.date = "";   // 범위 초과 날짜 제거
       if (!Array.isArray(d.stops)) d.stops = [];
       d.stops = d.stops.map(function (s) { return defaultStop(s); });
     });

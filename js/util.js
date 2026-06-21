@@ -23,7 +23,12 @@
         var v = props[k];
         if (v == null || v === false) return;
         if (k === "class") node.className += (node.className ? " " : "") + v;
-        else if (k === "html") node.innerHTML = v;
+        else if (k === "html") {
+          // html 프롭은 신뢰된 정적 리터럴(이모지 등) 전용. 사용자/외부 데이터는 반드시 text: 사용.
+          // 회귀 가드: < 또는 >가 포함된 값은 textContent로 강등해 XSS를 차단한다.
+          if (typeof v === "string" && !/[<>]/.test(v)) node.innerHTML = v;
+          else node.textContent = String(v);
+        }
         else if (k === "text") node.textContent = v;
         else if (k === "style" && typeof v === "object") Object.assign(node.style, v);
         else if (k.slice(0, 2) === "on" && typeof v === "function") node.addEventListener(k.slice(2), v);
@@ -68,8 +73,11 @@
   function parseDate(s) {
     if (!s) return null;
     var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
-    if (!m) { var d = new Date(s); return isNaN(d) ? null : d; }
-    return new Date(+m[1], +m[2] - 1, +m[3]);
+    if (!m) { var dd = new Date(s); return isNaN(dd) ? null : dd; }
+    var y = +m[1], mo = +m[2] - 1, da = +m[3];
+    var d = new Date(y, mo, da);
+    if (d.getFullYear() !== y || d.getMonth() !== mo || d.getDate() !== da) return null; // 범위 초과(롤오버) 거부
+    return d;
   }
   function weekdayKo(s) { var d = parseDate(s); return d ? WEEKDAYS[d.getDay()] : ""; }
   function weekdayIdx(s) { var d = parseDate(s); return d ? d.getDay() : -1; }

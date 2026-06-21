@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0a0e1a" />
-  <title>여행 플래너 · Trip Planner</title>
-  <meta name="description" content="날짜별 목적지를 입력하면 동선 최적화 · 실시간 날씨 · 우천 시 실내 추천 · 휴무/예약 체크 · 구글맵 길찾기까지 한 번에." />
+  <title>어케가지 · 여행 길찾기 플래너</title>
+  <meta name="description" content="어케가지 — 날짜별 목적지를 입력하면 동선 최적화 · 실시간 날씨 · 우천 시 실내 추천 · 휴무/예약 체크 · 구글맵 길찾기까지 한 번에. 일정 공유도." />
 
   <!-- Leaflet (지도) -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -21,11 +21,11 @@
     <!-- 상단 앱바 -->
     <header class="appbar">
       <button class="appbar__back" id="navBack" hidden aria-label="뒤로">←</button>
-      <div class="appbar__title" id="appTitle">여행 플래너</div>
+      <button class="appbar__title" id="appTitle" title="홈으로">어케가지</button>
       <div class="appbar__actions">
-        <button class="iconbtn" id="btnSample" title="예시(도쿄 3일) 불러오기">예시</button>
-        <button class="iconbtn" id="btnImport" title="JSON 가져오기">가져오기</button>
-        <button class="iconbtn" id="btnExport" title="JSON 내보내기">내보내기</button>
+        <button class="iconbtn iconbtn--accent" id="btnShare" title="일정 공유">↗ 공유</button>
+        <button class="iconbtn" id="btnSample" title="예시(오사카 3일) 불러오기">예시</button>
+        <button class="iconbtn" id="btnMenu" title="더보기" aria-haspopup="true" aria-expanded="false">⋯</button>
       </div>
     </header>
 
@@ -54,6 +54,7 @@
   <script src="./js/maps.js"></script>
   <script src="./js/render.js"></script>
   <script src="./js/editor.js"></script>
+  <script src="./js/share.js"></script>
   <script src="./js/sample.js"></script>
   <script src="./js/app.js"></script>
 </body>

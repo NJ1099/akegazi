@@ -14,13 +14,38 @@
     store.subscribe(function () { render(); });
 
     backEl.addEventListener("click", function () { location.hash = "#/"; });
+    titleEl.addEventListener("click", function () { location.hash = "#/"; });
+    U.$("#btnShare").addEventListener("click", function () { TP.share.shareTrip(); });
     U.$("#btnSample").addEventListener("click", loadSample);
-    U.$("#btnExport").addEventListener("click", doExport);
-    U.$("#btnImport").addEventListener("click", function () { U.$("#fileInput").click(); });
+    U.$("#btnMenu").addEventListener("click", function (e) { e.stopPropagation(); toggleMenu(this); });
     U.$("#fileInput").addEventListener("change", doImport);
 
     window.addEventListener("hashchange", render);
     render();
+    TP.share.checkIncoming();   // 공유 링크(#trip=...)로 들어왔으면 불러오기 모달
+  }
+
+  /* ---------- 더보기(⋯) 메뉴 ---------- */
+  function toggleMenu(anchor) {
+    if (U.$("#appbarMenu")) { closeMenu(); return; }
+    var menu = el("div.appbar-menu#appbarMenu", { role: "menu" }, [
+      el("button.appbar-menu__item", { role: "menuitem", onclick: function () { closeMenu(); U.$("#fileInput").click(); } }, ["📥 가져오기 (JSON)"]),
+      el("button.appbar-menu__item", { role: "menuitem", onclick: function () { closeMenu(); doExport(); } }, ["📤 내보내기 (JSON)"])
+    ]);
+    document.body.appendChild(menu);
+    var r = anchor.getBoundingClientRect();
+    menu.style.top = (r.bottom + 6) + "px";
+    menu.style.right = Math.max(8, window.innerWidth - r.right) + "px";
+    anchor.setAttribute("aria-expanded", "true");
+    setTimeout(function () { document.addEventListener("click", onDocClick, true); document.addEventListener("keydown", onMenuKey); }, 0);
+  }
+  function onDocClick(e) { var m = U.$("#appbarMenu"); if (m && !m.contains(e.target)) closeMenu(); }
+  function onMenuKey(e) { if (e.key === "Escape") closeMenu(); }
+  function closeMenu() {
+    var m = U.$("#appbarMenu"); if (m) m.parentNode.removeChild(m);
+    var b = U.$("#btnMenu"); if (b) b.setAttribute("aria-expanded", "false");
+    document.removeEventListener("click", onDocClick, true);
+    document.removeEventListener("keydown", onMenuKey);
   }
 
   /* ---------- 라우터 ---------- */
@@ -32,6 +57,7 @@
   }
 
   function render() {
+    closeMenu();                       // 어떤 경로(뒤로가기 등)로 와도 ⋯메뉴/리스너 정리
     epoch++;
     if (liveMap) { TP.maps.destroy(liveMap); liveMap = null; }
     viewEl.innerHTML = "";
@@ -49,7 +75,7 @@
   /* ---------- 홈 ---------- */
   function renderHome() {
     backEl.hidden = true;
-    titleEl.textContent = "여행 플래너";
+    titleEl.textContent = "어케가지";
     var trip = store.trip();
 
     var titleInput = el("input.trip-head__title", {
@@ -75,7 +101,7 @@
       ]));
       viewEl.appendChild(el("div", { style: { marginTop: "18px" } }, [
         el("button.btn.btn--block", { onclick: function () { TP.editor.openDayModal(); } }, ["+ 날짜 추가"]),
-        el("button.btn.btn--block.btn--ghost", { style: { marginTop: "10px" }, onclick: loadSample }, ["✨ 예시(도쿄 3일) 불러오기"])
+        el("button.btn.btn--block.btn--ghost", { style: { marginTop: "10px" }, onclick: loadSample }, ["✨ 예시(오사카 3일) 불러오기"])
       ]));
       return;
     }
@@ -181,39 +207,51 @@
   }
 
   function renderDayMap(day, idx, target) {
-    var myEpoch = epoch;
     target.innerHTML = "";
     var geoStops = day.stops.filter(geo.hasCoord);
     if (!geoStops.length) {
       target.appendChild(el("div.empty", null, [
         el("div.empty__emoji", { html: "🗺️" }),
         el("div.empty__title", { text: "지도에 표시할 위치가 없어요" }),
-        el("div.empty__desc", { text: "장소 편집에서 위치를 검색하거나 지도에서 찍어 좌표를 넣으면 동선이 그려져요." })
+        el("div.empty__desc", { text: "장소 편집에서 위치를 검색하거나 지도에서 찍어 좌표를 넣으면 구글지도에 동선이 그려져요." })
       ]));
       return;
     }
+    // 구글맵 키리스 임베드 (familiar + 고품질, API 키 불필요). 로드 실패 시 폴백.
+    var embed = TP.maps.gmapEmbedURL(day.stops);
     var wrap = el("div.mapwrap");
-    var mapDiv = el("div.day-map");
-    wrap.appendChild(mapDiv);
+    var ph = el("div.map-loading", null, [el("span.spin"), "  구글 지도 불러오는 중…"]);
+    var iframe = el("iframe.day-map", { src: embed, title: "구글 지도", allowfullscreen: "", referrerpolicy: "no-referrer-when-downgrade" });
+    var done = false;
+    iframe.addEventListener("load", function () { done = true; if (ph.parentNode) ph.parentNode.removeChild(ph); });
+    wrap.appendChild(iframe);
+    wrap.appendChild(ph);
     target.appendChild(wrap);
+    setTimeout(function () {
+      if (done || !wrap.isConnected) return;                  // 6초 내 미로드 → 새 탭 안내 폴백
+      wrap.innerHTML = "";
+      wrap.appendChild(el("div.map-loading.map-loading--fail", null, [
+        el("div", { text: "구글 지도를 불러오지 못했어요." }),
+        el("button.btn.btn--sm", { onclick: function () { allDirections(day); } }, ["🗺 새 탭에서 길찾기 열기"])
+      ]));
+    }, 6000);
 
+    // 범례 — 지도에 실제 표시되는 앞 EMBED_MAX곳만 번호 매김
     var color = TP.maps.DOT[idx % TP.maps.DOT.length];
-    // 범례
+    var shown = geoStops.slice(0, TP.maps.EMBED_MAX);
     var legend = el("div.map-legend");
-    geoStops.forEach(function (s, i) {
+    shown.forEach(function (s, i) {
       legend.appendChild(el("div.map-legend__item", null, [
         el("span.map-legend__dot", { style: { background: color } }),
         el("span", { text: (i + 1) + ". " + s.title })
       ]));
     });
+    if (geoStops.length > shown.length) {
+      legend.appendChild(el("div.map-legend__item", null, [
+        el("span", { text: "외 " + (geoStops.length - shown.length) + "곳은 지도에 표시되지 않아요" })
+      ]));
+    }
     target.appendChild(legend);
-
-    setTimeout(function () {
-      if (myEpoch !== epoch || !mapDiv.isConnected) return;       // 더 새로운 render가 돌았으면 생성 건너뜀
-      var map = TP.maps.renderRoute(mapDiv, day.stops, { color: color });
-      if (myEpoch !== epoch) { TP.maps.destroy(map); return; }     // 생성과 epoch 변경 경합 방어
-      liveMap = map;
-    }, 0);
   }
 
   /* ---------- 액션 ---------- */
@@ -259,10 +297,10 @@
   }
   function loadSample() {
     var t = store.trip();
-    if (t.days.length && !confirm("현재 일정을 예시(도쿄 3일)로 교체합니다. 계속할까요?")) return;
+    if (t.days.length && !confirm("현재 일정을 예시(오사카 3일)로 교체합니다. 계속할까요?")) return;
     store.replaceTrip(TP.sample());
     location.hash = "#/";
-    U.toast("도쿄 예시 일정을 불러왔어요");
+    U.toast("오사카 예시 일정을 불러왔어요");
   }
 
   /* ---------- 유틸 ---------- */

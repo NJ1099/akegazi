@@ -88,5 +88,20 @@
     try { if (map && map.remove) map.remove(); else if (map && map.map) map.map.remove(); } catch (e) {}
   }
 
-  TP.maps = { renderRoute: renderRoute, picker: picker, destroy: destroy, DOT: DOT };
+  var EMBED_MAX = 10;   // 임베드 동선에 표시할 좌표 stop 상한 (출발+경유+도착)
+
+  /* 구글맵 키리스 임베드 URL — 단일(q=) / 경로(saddr+daddr+to:). API 키 불필요. */
+  function gmapEmbedURL(stops) {
+    var pts = (stops || []).filter(hasCoord);
+    if (!pts.length) return null;
+    if (pts.length === 1) {
+      return "https://maps.google.com/maps?q=" + pts[0].lat + "," + pts[0].lon + "&z=14&hl=ko&output=embed";
+    }
+    var used = pts.slice(0, EMBED_MAX);
+    var saddr = used[0].lat + "," + used[0].lon;
+    var daddr = used.slice(1).map(function (s) { return s.lat + "," + s.lon; }).join("+to:");
+    return "https://maps.google.com/maps?saddr=" + saddr + "&daddr=" + daddr + "&hl=ko&output=embed";
+  }
+
+  TP.maps = { renderRoute: renderRoute, picker: picker, destroy: destroy, gmapEmbedURL: gmapEmbedURL, EMBED_MAX: EMBED_MAX, DOT: DOT };
 })(window.TP = window.TP || {});

@@ -2,7 +2,7 @@
 
 날짜별 목적지를 입력하면 **동선 최적화 · 실시간 날씨 · 우천 시 실내 추천 · 휴무/예약 체크 · 구글맵 길찾기**까지 한 화면에서 도와주는 **서버 없는 정적 웹앱**입니다. 빌드 단계·API 키·백엔드가 전혀 없어 GitHub Pages에 그대로 올라갑니다.
 
-> 데모: `https://<USERNAME>.github.io/akegazi/`
+> 데모: `https://nj1099.github.io/akegazi/`
 
 ## 핵심 기능
 
@@ -64,7 +64,7 @@ python -m http.server 4488
 
 1. 이 폴더를 GitHub 저장소 `akegazi`로 push.
 2. 저장소 **Settings → Pages → Build and deployment**: Source = *Deploy from a branch*, Branch = `main` / `(root)`.
-3. 잠시 후 `https://<USERNAME>.github.io/akegazi/` 에서 동작합니다. (`.nojekyll` 포함되어 Jekyll 처리 없이 정적 배포)
+3. 잠시 후 `https://nj1099.github.io/akegazi/` 에서 동작합니다. (`.nojekyll` 포함되어 Jekyll 처리 없이 정적 배포)
 
 ## 개인정보 / 데이터
 

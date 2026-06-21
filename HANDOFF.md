@@ -25,7 +25,17 @@
 2. **[필수] 전 모듈 구현** — index.html/app.css + js 9개(util·store·geo·weather·maps·render·editor·sample·app)
 3. **[검증] 브라우저 QA** — Playwright(시스템 Chrome 채널)로 빈화면→예시→타임라인→지도→에디터 플로우, 콘솔에러 0건, 스크린샷 확인
 4. **[수정] 버그 픽스** — 홈에서 뒤로(←) 버튼 노출(`display:grid`가 `hidden` 덮음) → `[hidden]{display:none!important}` 추가. 예시 제목 3일로 정정.
-5. **[검증] 다차원 어드버서리얼 리뷰** — 보안/정확성/엣지/UX/배포 5차원 워크플로
+5. **[검증] 다차원 어드버서리얼 리뷰(23건) 반영** — 5차원(보안/정확성/엣지/UX/배포) 워크플로로 확정된 결함 전건 수정:
+   - 동선 최적화 중간 앵커 보존(구간 분할) + 2-opt i=0 버그 (node 단위테스트로 검증)
+   - 키보드 접근성(Stop 카드 role/tabindex), 모달 포커스 트랩/복원/role=dialog, 배경 스크롤 잠금
+   - 날씨 최근 과거일 forecast 조회(`past_days` 병용 시 400 — 실측으로 확인 후 제거), 실패 응답 캐시 금지
+   - 좌표 범위 정규화·parseDate 롤오버 거부·el() html XSS 회귀 가드·지도 누수 가드
+   - 대비(텍스트/버튼 AA)·터치 타깃 44px·OSM 단일 호스트 타일
+6. **[검증] 재 QA** — Playwright(시스템 Chrome) 콘솔에러 0, a11y/모달/날씨/지도 통과
+
+## 배포 (다음 단계)
+- 로컬 git repo 초기화 + 2커밋 완료(`feat 1차 구축` → `fix 리뷰 23건`). `gh` CLI 설치됨(미인증).
+- **남은 단계**: 사용자 `gh auth login`(브라우저) → `gh repo create akegazi --public --source . --push` → Settings/Pages(main/root) 또는 `gh api`로 Pages 활성화.
 
 ## 알려진 제약 / TODO
 - **대중교통 자동 경로/시간 계산 없음** — 길찾기는 구글맵 딥링크로 위임(무료 정적 호스팅 제약). 동선 최적화는 직선거리(haversine) 기준.

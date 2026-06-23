@@ -7,7 +7,9 @@
 ## 현재 상태 한 줄 요약
 날짜별 목적지 입력 → **구글 지도 검색**·동선 최적화 · **구글맵 번호 동선** · **공항 시각 기반 시간 일정(ETA·비행기 마감 경고)** · 실시간 날씨 · 우천 시 실내 추천 · 휴무/예약 체크 · 일정 링크 공유까지 되는 **정적 SPA**. 구글맵은 **referrer 제한 브라우저 키**(`js/config.js`) 1개로 동작. **GitHub Pages 배포** → https://nj1099.github.io/akegazi/ (repo: NJ1099/akegazi).
 
-> ⚠️ **키 필수**: `js/config.js`의 `GOOGLE_MAPS_API_KEY`가 비어 있으면 검색은 키리스 폴백(OSM)으로, 지도는 안내 메시지로 degrade. 키를 넣어야 구글 검색/지도가 켜진다. 키는 HTTP 리퍼러(`nj1099.github.io/*`, `localhost`)+API(Maps JS·Places New) 제한 필수.
+> ⚠️ **키 필수**: `js/config.js`의 `GOOGLE_MAPS_API_KEY`가 비어 있으면 검색은 키리스 폴백(OSM)으로, 지도는 안내 메시지로 degrade. 키를 넣어야 구글 검색/지도가 켜진다. 키는 HTTP 리퍼러 + API(Maps JS·Places New) 제한 필수.
+>
+> 🚨 **리퍼러 함정(중요)**: 지도(Maps JS)는 페이지 전체 URL(`https://nj1099.github.io/akegazi/`)을 리퍼러로 보내지만, **검색(Places API New, `places.googleapis.com`)은 브라우저 정책상 origin(`https://nj1099.github.io/`)만** 보낸다. 그래서 키 허용목록에 `https://nj1099.github.io/akegazi/*`만 있으면 **지도는 되는데 검색은 403(`API_KEY_HTTP_REFERRER_BLOCKED`)**으로 막힌다. 반드시 **origin 와일드카드 `https://nj1099.github.io/*`** 를 허용목록에 넣어야 검색이 동작한다(라이브 실측으로 확인된 게이팅 이슈).
 
 ## 지금 동작하는 것
 - **다중 여행 관리** — 홈=여행 목록(나라·일정별), 여행=날짜 목록, 날짜=장소 타임라인 (3단계 해시 라우팅). 여행 추가/전환/삭제, 전체 지우기.

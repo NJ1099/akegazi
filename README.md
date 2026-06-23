@@ -53,6 +53,7 @@
 1. [Google Cloud Console](https://console.cloud.google.com)에서 프로젝트 생성 → **결제 계정 연결**(개인 사용은 매월 무료 한도 내).
 2. **Maps JavaScript API**·**Places API (New)** 사용 설정 → **API 키** 발급.
 3. 키 제한(필수): **애플리케이션 제한 = HTTP 리퍼러**(`https://nj1099.github.io/*`, `http://localhost:*/*`), **API 제한 = 위 두 API**.
+   - ⚠️ **리퍼러는 반드시 origin 와일드카드 `https://nj1099.github.io/*`** 로 등록하세요. 검색(Places API New)은 브라우저 정책상 **origin(`https://nj1099.github.io/`)만** 리퍼러로 보내므로, `/akegazi/*` 처럼 경로에 한정하면 **지도는 되지만 검색이 403**으로 막힙니다.
 4. 발급한 키를 `js/config.js`의 `GOOGLE_MAPS_API_KEY`에 넣습니다. (리퍼러 제한 브라우저 키라 공개돼도 타 도메인에선 동작하지 않습니다.)
    비워두면 검색은 OSM 폴백, 지도는 안내 메시지로 동작합니다.
 

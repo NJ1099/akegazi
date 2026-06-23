@@ -55,5 +55,14 @@
   <script src="./js/share.js"></script>
   <script src="./js/sample.js"></script>
   <script src="./js/app.js"></script>
+
+  <!-- 서비스 워커: network-first(온라인이면 새로고침 = 최신, 오프라인이면 캐시 폴백) -->
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("./sw.js").catch(function () {});
+      });
+    }
+  </script>
 </body>
 </html>

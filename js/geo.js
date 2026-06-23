@@ -161,7 +161,20 @@
     var out = perm.map(function (k) { return nodes[k]; });
     if (prev) out.shift();
     if (next) out.pop();
+    // 양 끝이 자유(앵커 없음)면 경로 방향이 모호 → 사용자가 입력한 순서에 더 가까운 방향을 선택.
+    // (역방향은 거리가 같아 '최적'이지만 입력과 반대로 뒤집혀 보이므로 방지)
+    if (!lockStart && !lockEnd && out.length > 2) {
+      var rev = out.slice().reverse();
+      if (orderDisplacement(rev, seg) < orderDisplacement(out, seg)) out = rev;
+    }
     return out;
+  }
+
+  // arr가 기준 순서(ref)에서 얼마나 어긋났는지(위치 차의 합) — 작을수록 입력에 가까움
+  function orderDisplacement(arr, ref) {
+    var sum = 0;
+    for (var i = 0; i < arr.length; i++) sum += Math.abs(i - ref.indexOf(arr[i]));
+    return sum;
   }
 
   function isAnchor(s) { return s.fixed || s.type === "airport" || s.type === "lodging"; }

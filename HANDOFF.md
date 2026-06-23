@@ -65,6 +65,10 @@
 4. **공항 시각 기반 시간 일정** — `geo.buildSchedule` 신규(도착편=시작/출발편=마감, 구간 ETA, 비행기 위험). Stop에 `arriveTime/departTime/stayMin` 추가(store·share KMAP 3곳 규칙). editor에 공항 시각·체류 입력(공항 타입에서만 표시), render에 ETA 레일·`scheduleBanner` 위험 경고, app에서 schedule 계산·전달.
 5. **검증** — geo 순수 로직 node 단위테스트 27/27, puppeteer 헤드리스 스모크 14/14(예시→배너→ETA→에디터 토글→공유 라운드트립, 콘솔에러 0).
 
+### 5차 (사용자 피드백 반영) — 2026-06-24
+1. **동선 최적화 방향 안정화** — 앵커 없는 열린 경로는 방향이 모호해, 첫 등록 장소가 지리적 중간이면 결과가 통째로 역방향(예 `C,A,B,D,E`→`E,D,C,B,A`)으로 뒤집혀 "뒤바뀐다"는 불만. `geo.optimizeSegment`에 **방향 선택(orderDisplacement)** 추가: 자유 구간은 최적화 후 입력 순서에 더 가까운 방향을 채택, 단순 역순 입력은 그대로 유지(→ "이미 효율적"). node 테스트로 고정.
+2. **캐시 최신화(서비스 워커)** — "새로고침해도 최신화 안 됨(다른 브라우저는 됨)"은 GitHub Pages의 HTML 캐시(기본 10분) 탓. `sw.js`(**network-first**, 같은 출처 GET만, 외부 구글/날씨 통과, skipWaiting+claim) 신규 + index.html 등록. 온라인이면 새로고침=최신, 오프라인은 캐시 폴백. 캐시 무효화 필요 시 `sw.js`의 `CACHE` 버전 올림. ⚠️ 현재 구버전 캐시를 가진 사용자는 **1회 강력 새로고침/사이트 데이터 삭제**로 SW를 깔면 이후 자동 최신화.
+
 ## 알려진 제약 / TODO
 - **구글맵 API 키 필요** — `js/config.js`에 referrer 제한 브라우저 키. 비면 검색은 OSM 폴백·지도는 안내문. 결제계정 필요하나 개인 사용은 무료 한도 내(예산 알림 권장).
 - **시간 일정은 추정** — 이동시간은 직선거리/평균속도(22km·h) 기반 추정, 실제 대중교통 경로 시간 아님. 버퍼(수속 45분/출발 2시간)는 상수. 길찾기 실경로는 구글맵 딥링크로 위임.
@@ -85,7 +89,8 @@
 ## 주요 파일 (빠른 참조)
 | 파일 | 역할 |
 |------|------|
-| `index.html` | SPA 셸, config→gmaps→모듈 로드 (Leaflet 제거됨) |
+| `index.html` | SPA 셸, config→gmaps→모듈 로드 + SW 등록 (Leaflet 제거됨) |
+| `sw.js` | 서비스 워커(network-first 캐시: 새로고침=최신, 오프라인 폴백) |
 | `js/config.js` | **구글맵 API 키**(referrer 제한 공개 키) |
 | `js/gmaps.js` | 구글맵 동적 로더 + `TP.gmaps.lib()` 헬퍼 |
 | `css/app.css` | 디자인 시스템(다크 타임라인) |

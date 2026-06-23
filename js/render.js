@@ -91,6 +91,15 @@
     ]);
     card.appendChild(head);
 
+    // 공항 시각 (도착/출발)
+    if (stop.type === "airport" && (stop.arriveTime || stop.departTime)) {
+      var apBits = [];
+      if (stop.arriveTime) apBits.push("도착 " + stop.arriveTime);
+      if (stop.departTime) apBits.push("출발 " + stop.departTime);
+      card.appendChild(el("div.stop__addr", null, [
+        el("span.pin", { html: "✈️" }), el("span", { text: apBits.join("  ·  ") })
+      ]));
+    }
     // 주소
     if (stop.address) {
       card.appendChild(el("div.stop__addr", null, [
@@ -170,10 +179,16 @@
       ]);
     }
     ctx.canReorder = day.stops.length > 1;
+    var sched = ctx.schedule || TP.geo.buildSchedule(day.stops);
+    var schedMap = {}; sched.items.forEach(function (it) { schedMap[it.id] = it; });
     day.stops.forEach(function (s, i) {
       var color = TP.maps.DOT[(ctx.dayIndex || 0) % TP.maps.DOT.length];
+      var it = schedMap[s.id], timeText, est = false;
+      if (s.time) { timeText = s.time; }                                                          // 사용자가 입력한 시각 우선
+      else if (sched.active && it && it.etaArrive != null) { timeText = TP.geo.minToHm(it.etaArrive); est = true; }   // 비어 있으면 추정 ETA
+      else timeText = dashTime(i);
       var item = el("div.tl-item", { dataset: { stop: s.id } }, [
-        el("div.tl-item__time", { text: s.time || dashTime(i) }),
+        el("div.tl-item__time" + (est ? ".tl-item__time--est" : ""), { text: timeText, title: est ? "예상 도착(추정)" : null }),
         el("div.tl-item__dot", { style: { "--dot": color, background: color, boxShadow: "0 0 0 4px var(--bg-2), 0 0 12px " + color } }),
         stopCard(day, s, i > 0 ? day.stops[i - 1] : null, ctx, i)
       ]);
@@ -214,9 +229,75 @@
     ]);
   }
 
+  /* ---- 일정(시간) 배너 ---- */
+  function fmtDur(min) {
+    min = Math.max(0, Math.round(min || 0));
+    var h = Math.floor(min / 60), m = min % 60;
+    return h ? (m ? h + "시간 " + m + "분" : h + "시간") : m + "분";
+  }
+  function scheduleBanner(schedule) {
+    if (!schedule || !schedule.active) return null;
+    var G = TP.geo, dl = schedule.deadline;
+    if (schedule.conflict) {     // 입력 시각이 동선 순서와 모순
+      return el("div.sched-banner.sched-banner--warn", null, [
+        el("span.em", { html: "⚠️" }),
+        el("span", null, ["입력한 도착/고정 시각이 앞 일정보다 일러요. 시각이 동선 순서와 모순되니 확인하세요."])
+      ]);
+    }
+    if (dl) {
+      var flight = G.minToHm(dl.flightDepart), mustBe = G.minToHm(dl.mustBeBy);
+      if (dl.travelUnknown) {    // 좌표 없는 구간 있어 ETA 신뢰 불가 → 거짓 안전 금지
+        return el("div.sched-banner.sched-banner--warn", null, [
+          el("span.em", { html: "⚠️" }),
+          el("span", null, [
+            el("b", { text: flight + " 출발편" }),
+            " — 좌표 없는 장소가 있어 이동시간을 반영하지 못했어요. 도착 예상이 부정확하니 공항·장소 위치를 지정하세요 (권장 도착 " + mustBe + ")."
+          ])
+        ]);
+      }
+      if (dl.late) {
+        return el("div.sched-banner.sched-banner--risk", null, [
+          el("span.em", { html: "⚠️" }),
+          el("span", null, [
+            el("b", { text: flight + " 출발편" }),
+            " — 지금 동선이면 공항 도착 예상 ", el("b", { text: G.minToHm(dl.etaArrive) }),
+            ", 권장 도착 " + mustBe + "보다 ", el("b", { text: fmtDur(dl.overBy) }),
+            " 늦어요. 일정을 줄이거나 순서를 조정하세요."
+          ])
+        ]);
+      }
+      if (dl.etaArrive != null) {
+        return el("div.sched-banner", null, [
+          el("span.em", { html: "✈️" }),
+          el("span", null, [
+            el("b", { text: flight + " 출발편" }),
+            " — 공항 도착 예상 ", el("b", { text: G.minToHm(dl.etaArrive) }),
+            " · 권장 " + mustBe + "까지 ", el("b", { text: fmtDur(dl.mustBeBy - dl.etaArrive) }), " 여유"
+          ])
+        ]);
+      }
+      return el("div.sched-banner", null, [
+        el("span.em", { html: "✈️" }),
+        el("span", null, [el("b", { text: flight + " 출발편" }), " — 늦어도 " + mustBe + "까지 공항 도착 권장(출발 2시간 전)"])
+      ]);
+    }
+    if (schedule.startMin != null) {
+      var end = null;
+      for (var i = schedule.items.length - 1; i >= 0; i--) { if (schedule.items[i].etaDepart != null) { end = schedule.items[i].etaDepart; break; } }
+      return el("div.sched-banner", null, [
+        el("span.em", { html: "✈️" }),
+        el("span", null, [
+          "일정 시작 예상 ", el("b", { text: G.minToHm(schedule.startMin) }),
+          end != null ? " · 마지막 일정 종료 예상 " : "", end != null ? el("b", { text: G.minToHm(end) }) : null
+        ])
+      ]);
+    }
+    return null;
+  }
+
   TP.render = {
     timeline: timeline, stopCard: stopCard, badgesFor: badgesFor,
-    weatherBanner: weatherBanner, rainBanner: rainBanner,
+    weatherBanner: weatherBanner, rainBanner: rainBanner, scheduleBanner: scheduleBanner,
     typeIcon: typeIcon, TYPE_ICON: TYPE_ICON, TYPE_LABEL: TYPE_LABEL,
     closingInfo: closingInfo
   };

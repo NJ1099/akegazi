@@ -316,6 +316,28 @@ a { color: inherit; }
 .rain-banner b { color: var(--c-blue); }
 .rain-banner .em { font-size: 18px; line-height: 1.2; }
 
+/* 시간 일정(공항 ETA / 비행기 마감) 배너 */
+.sched-banner {
+  display: flex; gap: 10px; align-items: flex-start;
+  background: linear-gradient(180deg, rgba(167,139,250,.12), rgba(167,139,250,.05));
+  border: 1px solid rgba(167,139,250,.32);
+  border-radius: var(--radius);
+  padding: 12px 14px; margin-bottom: 14px;
+  font-size: 12.8px; line-height: 1.55; color: var(--text);
+}
+.sched-banner .em { font-size: 18px; line-height: 1.2; flex: 0 0 auto; }
+.sched-banner b { color: #c4b5fd; font-weight: 850; }
+.sched-banner--risk {
+  background: linear-gradient(180deg, rgba(251,113,133,.15), rgba(251,113,133,.05));
+  border-color: rgba(251,113,133,.45);
+}
+.sched-banner--risk b { color: var(--c-red); }
+.sched-banner--warn {
+  background: linear-gradient(180deg, rgba(251,191,36,.14), rgba(251,191,36,.05));
+  border-color: rgba(251,191,36,.42);
+}
+.sched-banner--warn b { color: var(--c-amber); }
+
 /* 메인 이벤트 하이라이트 (영상의 파란 띠) */
 .main-event {
   display: flex; gap: 9px; align-items: center;
@@ -354,6 +376,7 @@ a { color: inherit; }
   position: absolute; left: -56px; top: 4px; width: 42px;
   text-align: right; color: var(--text-3); font-size: 11.5px; font-weight: 800; letter-spacing: -.02em;
 }
+.tl-item__time--est { color: var(--brand); }   /* 추정 ETA(자동 계산) */
 .tl-item__dot {
   position: absolute; left: -13px; top: 7px;
   width: 11px; height: 11px; border-radius: 999px;
@@ -457,6 +480,10 @@ iframe.day-map { border: 0; display: block; }
 .leaflet-popup-tip { background: var(--surface-hi); }
 .leaflet-popup-content { font-size: 12.5px; margin: 10px 12px; }
 .leaflet-bar a { background: var(--surface); color: var(--text); border-color: var(--line); }
+
+/* 구글맵 InfoWindow(흰 말풍선) 내부 텍스트 */
+.gmap-pop__t { font-weight: 800; color: #0b1020; font-size: 13px; }
+.gmap-pop__s { font-size: 11px; color: #475569; margin-top: 2px; }
 
 /* 지도 범례 */
 .map-legend { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 14px; }

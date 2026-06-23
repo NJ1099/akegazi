@@ -4,6 +4,7 @@
  *   Trip  { id, title, days: [Day] }
  *   Day   { id, date:'YYYY-MM-DD', label, stops: [Stop] }
  *   Stop  { id, type, title, subtitle, address, lat, lon, time, durationLabel,
+ *           arriveTime, departTime, stayMin,   // 공항 도착/출발 시각 + 체류시간(분)
  *           indoor, openHours, closingDays:[0..6], closingNote,
  *           reservation, reservationNote, fixed, photoSpot, note, cost }
  *
@@ -24,12 +25,16 @@
     var s = Object.assign({
       id: uid(), type: "attraction", title: "", subtitle: "", address: "",
       lat: null, lon: null, time: "", durationLabel: "",
+      arriveTime: "", departTime: "", stayMin: null,
       indoor: null, openHours: "", closingDays: [], closingNote: "",
       reservation: "none", reservationNote: "", fixed: false, photoSpot: false,
       note: "", cost: ""
     }, partial || {});
     s.lat = (typeof s.lat === "number" && isFinite(s.lat) && s.lat >= -90 && s.lat <= 90) ? s.lat : null;
     s.lon = (typeof s.lon === "number" && isFinite(s.lon) && s.lon >= -180 && s.lon <= 180) ? s.lon : null;
+    // 체류시간(분): 0 이상 정수만, 아니면 null(타입별 기본값 사용)
+    var sm = parseInt(s.stayMin, 10);
+    s.stayMin = (isFinite(sm) && sm >= 0) ? sm : null;
     // 가져오기/공유 데이터 방어: closingDays는 0~6 정수 요일만
     s.closingDays = (Array.isArray(s.closingDays) ? s.closingDays : []).map(Number).filter(function (d) { return d >= 0 && d <= 6 && Math.floor(d) === d; });
     return s;

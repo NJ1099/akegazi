@@ -8,7 +8,8 @@
   /* 짧은 키 ↔ 풀 키 */
   var KMAP = {
     y: "type", n: "title", u: "subtitle", a: "address", la: "lat", lo: "lon",
-    tm: "time", dl: "durationLabel", in: "indoor", oh: "openHours", cd: "closingDays",
+    tm: "time", dl: "durationLabel", at: "arriveTime", dp: "departTime", sm: "stayMin",
+    in: "indoor", oh: "openHours", cd: "closingDays",
     cn: "closingNote", rs: "reservation", rn: "reservationNote", fx: "fixed",
     ph: "photoSpot", nt: "note", co: "cost"
   };
@@ -25,6 +26,9 @@
     if (typeof s.lon === "number") c.lo = round6(s.lon);
     if (s.time) c.tm = s.time;
     if (s.durationLabel) c.dl = s.durationLabel;
+    if (s.arriveTime) c.at = s.arriveTime;
+    if (s.departTime) c.dp = s.departTime;
+    if (typeof s.stayMin === "number") c.sm = s.stayMin;
     if (s.indoor === true || s.indoor === false) c.in = s.indoor;
     if (s.openHours) c.oh = s.openHours;
     if (s.closingDays && s.closingDays.length) c.cd = s.closingDays;

@@ -191,6 +191,13 @@
     var rainSlot = el("div");
     viewEl.appendChild(wxSlot); viewEl.appendChild(rainSlot);
 
+    // 시간 일정(공항 도착/출발 기준 ETA·비행기 마감) 배너
+    var schedule = geo.buildSchedule(day.stops);
+    var schedSlot = el("div");
+    var sb = R.scheduleBanner(schedule);
+    if (sb) schedSlot.appendChild(sb);
+    viewEl.appendChild(schedSlot);
+
     var mode = dayMode[day.id] || "timeline";
     viewEl.appendChild(el("div.segmented", null, [
       el("button" + (mode === "timeline" ? ".is-active" : ""), { onclick: function () { dayMode[day.id] = "timeline"; render(); } }, ["🗓 타임라인"]),
@@ -202,7 +209,7 @@
 
     var myEpoch = epoch;
     if (mode === "map") renderDayMap(day, idx, bodySlot);
-    else drawTimeline(day, idx, bodySlot, false);
+    else drawTimeline(day, idx, bodySlot, false, schedule);
 
     W.getDayWeather(day).then(function (wx) {
       if (myEpoch !== epoch || !wxSlot.isConnected) return;
@@ -210,7 +217,7 @@
       rainSlot.innerHTML = "";
       var rb = R.rainBanner(W.indoorPlan(day, wx));
       if (rb) rainSlot.appendChild(rb);
-      if (wx && wx.rainy && mode === "timeline") drawTimeline(day, idx, bodySlot, true);
+      if (wx && wx.rainy && mode === "timeline") drawTimeline(day, idx, bodySlot, true, schedule);
     });
 
     viewEl.appendChild(el("div", { style: { marginTop: "16px", display: "flex", gap: "10px" } }, [
@@ -220,9 +227,9 @@
     viewEl.appendChild(el("button.btn.btn--block", { style: { marginTop: "10px" }, onclick: function () { TP.editor.openStopModal(day.id); } }, ["+ 장소 추가"]));
   }
 
-  function drawTimeline(day, idx, target, rainy) {
+  function drawTimeline(day, idx, target, rainy, schedule) {
     target.innerHTML = "";
-    var ctx = { dayIndex: idx, rainy: !!rainy, onEdit: function (sid) { TP.editor.openStopModal(day.id, sid); } };
+    var ctx = { dayIndex: idx, rainy: !!rainy, schedule: schedule, onEdit: function (sid) { TP.editor.openStopModal(day.id, sid); } };
     var tl = R.timeline(day, ctx);
     target.appendChild(tl);
     if (day.stops.length > 1) attachDragReorder(tl, day.id);

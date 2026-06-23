@@ -78,11 +78,25 @@
       TYPES.forEach(function (t) {
         var c = el("button.chip" + (f.type === t[0] ? ".is-on" : ""), {
           type: "button",
-          onclick: function () { f.type = t[0]; U.$$(".chip", typeWrap).forEach(function (x) { x.classList.remove("is-on"); }); this.classList.add("is-on"); }
+          onclick: function () { f.type = t[0]; U.$$(".chip", typeWrap).forEach(function (x) { x.classList.remove("is-on"); }); this.classList.add("is-on"); syncType(); }
         }, [t[1]]);
         typeWrap.appendChild(c);
       });
       box.appendChild(field("종류", typeWrap));
+
+      // ----- 공항 시각 (공항 타입에서만 표시) -----
+      var arriveInput = el("input.input", { type: "time", value: f.arriveTime || "", oninput: function () { f.arriveTime = this.value; } });
+      var departInput = el("input.input", { type: "time", value: f.departTime || "", oninput: function () { f.departTime = this.value; } });
+      var airportBox = field("✈️ 공항 시각", el("div.row", null, [
+        wrapLabeled("도착(착륙) 시각", arriveInput),
+        wrapLabeled("출발(이륙) 시각", departInput)
+      ]), "도착편=도착시각, 출발편=출발시각 — 그날 동선 ETA·비행기 마감 체크에 사용");
+      box.appendChild(airportBox);
+      function syncType() {
+        airportBox.style.display = (f.type === "airport") ? "" : "none";
+        if (stayInput) stayInput.placeholder = "기본 " + TP.geo.defaultDwell(f.type) + "분";
+      }
+      syncType();
 
       // 현지명/부제
       box.appendChild(field("현지명 · 부제 (선택)",
@@ -99,12 +113,15 @@
         } else { pickedLabel.style.display = "none"; }
       }
       showPicked();
+      var searchSeq = 0;
       function doSearch() {
         var q = searchInput.value.trim();
         if (!q) { searchInput.focus(); return; }
+        var mySeq = ++searchSeq;
         results.innerHTML = "";
         results.appendChild(el("div.geo-result", null, [el("span.spin"), "  검색 중…"]));
         TP.geo.geocode(q).then(function (list) {
+          if (mySeq !== searchSeq) return;   // 더 최신 검색이 시작됨 → stale 결과 무시
           results.innerHTML = "";
           if (!list.length) { results.appendChild(el("div.geo-result", { text: "결과가 없어요. 주소를 더 구체적으로 입력해보세요." })); return; }
           list.forEach(function (r) {
@@ -122,10 +139,16 @@
             }, [el("div.name", { text: r.name }), el("div.addr", { text: r.address })]));
           });
         }).catch(function () {
+          if (mySeq !== searchSeq) return;
           results.innerHTML = ""; results.appendChild(el("div.geo-result", { text: "검색에 실패했어요. 잠시 후 다시 시도하세요." }));
         });
       }
       searchInput.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); doSearch(); } });
+      var liveSearch = U.debounce(function () {
+        if (searchInput.value.trim().length >= 2) doSearch();
+        else { searchSeq++; results.innerHTML = ""; }   // 짧은/빈 질의: 진행 중 검색 무효화 + 이전 결과 제거
+      }, 380);
+      searchInput.addEventListener("input", liveSearch);   // 입력 즉시 구글 검색(디바운스)
       var searchRow = el("div.row", null, [searchInput, el("button.btn.btn--ghost", { type: "button", style: { flex: "0 0 auto" }, onclick: doSearch }, ["검색"])]);
 
       // 지도에서 선택 토글
@@ -152,12 +175,19 @@
       var addrInput = el("input.input", { value: f.address, placeholder: "주소 (선택)", oninput: function () { f.address = this.value; } });
       box.appendChild(field("주소 (선택)", addrInput));
 
-      // 시간 / 소요시간
+      // 시간 / 체류시간 / 소요시간
+      var stayInput = el("input.input", {
+        type: "number", min: "0", value: (f.stayMin != null ? f.stayMin : ""),
+        placeholder: "기본 " + TP.geo.defaultDwell(f.type) + "분",
+        oninput: function () { var v = parseInt(this.value, 10); f.stayMin = (isFinite(v) && v >= 0) ? v : null; }
+      });
       box.appendChild(field("",
         el("div.row", null, [
           wrapLabeled("도착 시간", el("input.input", { type: "time", value: f.time, oninput: function () { f.time = this.value; } })),
-          wrapLabeled("소요시간 표시", el("input.input", { value: f.durationLabel, placeholder: "예: 약 60~90분", oninput: function () { f.durationLabel = this.value; } }))
-        ])));
+          wrapLabeled("체류 시간(분)", stayInput)
+        ]), "체류 시간은 일정 ETA 계산에 사용돼요 (비우면 종류별 기본값)"));
+      box.appendChild(field("소요시간 표시 (선택)",
+        el("input.input", { value: f.durationLabel, placeholder: "예: 약 60~90분", oninput: function () { f.durationLabel = this.value; } })));
 
       // 영업시간
       box.appendChild(field("영업시간 (선택)",

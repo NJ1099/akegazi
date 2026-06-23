@@ -11,3 +11,6 @@ desktop.ini
 
 # 의존성 (현재 없음, 향후 대비)
 node_modules/
+
+# Claude Code 로컬 설정
+.claude/

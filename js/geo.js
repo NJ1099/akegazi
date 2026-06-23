@@ -1,9 +1,9 @@
-/* geo.js — 지오코딩 · 거리 · 동선 최적화 · 구글맵 딥링크 (네임스페이스 TP.geo)
+/* geo.js — 지오코딩 · 거리 · 동선 최적화 · 시간 일정 · 구글맵 딥링크 (네임스페이스 TP.geo)
  *
- * 무료/키 불필요:
- *   - 지오코딩: Nominatim(OSM) → 실패 시 Open-Meteo Geocoding(도시명) 폴백
+ *   - 지오코딩: 구글 Places Text Search(키 있을 때) → 폴백 Nominatim(OSM)/Open-Meteo
  *   - 길찾기: 구글맵 Directions URL API (실제 대중교통/도보 경로)
  *   - 최적화: 좌표 있는 장소만 nearest-neighbor + 2-opt (양 끝 앵커 고정)
+ *   - 시간 일정: 공항 도착/출발 시각 기준 구간 ETA + 비행기 마감 위험(buildSchedule)
  */
 (function (TP) {
   "use strict";
@@ -32,10 +32,47 @@
     return m < 1000 ? Math.round(m) + "m" : (m / 1000).toFixed(m < 10000 ? 1 : 0) + "km";
   }
 
-  /* ---------- 지오코딩 ---------- */
+  /* ---------- 지오코딩 ----------
+     1순위: 구글 Places Text Search(키 있을 때) — 장소명/주소 품질 우수
+     폴백: Nominatim(OSM) → Open-Meteo(도시명). 키 없거나 구글 실패/무결과 시.
+     반환 계약: [{ name, address, lat, lon }] (editor.js가 의존) */
   function geocode(query) {
     query = (query || "").trim();
     if (!query) return Promise.resolve([]);
+    if (TP.gmaps && TP.gmaps.hasKey()) {
+      return googleGeocode(query).then(function (list) {
+        return list.length ? list : keylessGeocode(query);   // 구글 무결과 → 폴백
+      }).catch(function () { return keylessGeocode(query); }); // 구글 오류 → 폴백
+    }
+    return keylessGeocode(query);
+  }
+
+  // 구글 Places (New) Text Search
+  function googleGeocode(query) {
+    return TP.gmaps.lib("places").then(function (places) {
+      return places.Place.searchByText({
+        textQuery: query,
+        fields: ["displayName", "formattedAddress", "location"],
+        language: "ko",
+        maxResultCount: 8
+      });
+    }).then(function (res) {
+      var arr = (res && res.places) || [];
+      return arr.map(function (p) {
+        var loc = p.location, lat = null, lon = null;
+        if (loc) {
+          lat = (typeof loc.lat === "function") ? loc.lat() : loc.lat;
+          lon = (typeof loc.lng === "function") ? loc.lng() : loc.lng;
+        }
+        var nm = p.displayName;
+        if (nm && typeof nm === "object") nm = nm.text || "";   // 혹시 객체로 올 때
+        return { name: nm || query, address: p.formattedAddress || "", lat: normLat(lat), lon: normLon(lon) };
+      }).filter(function (r) { return r.lat != null && r.lon != null; });
+    });
+  }
+
+  // 키리스 폴백: Nominatim(OSM) → Open-Meteo(도시명)
+  function keylessGeocode(query) {
     var nomi = "https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=6&accept-language=ko&q=" + encodeURIComponent(query);
     return fetchJSON(nomi, { timeout: 9000 }).then(function (arr) {
       var out = (arr || []).map(function (r) {
@@ -175,6 +212,112 @@
   }
   function reverse(arr, i, j) { while (i < j) { var t = arr[i]; arr[i] = arr[j]; arr[j] = t; i++; j--; } }
 
+  /* ---------- 시간 기반 일정(스케줄) ----------
+     공항 도착/출발 시각을 기준으로 하루 동선의 구간별 예상 도착(ETA)을 계산하고,
+     출발편(비행기)을 놓칠 위험을 경고한다. 이동시간은 직선거리 기반 추정치다. */
+  var SPEED_KMH = 22;          // 도심 평균(대중교통+도보 혼합) 추정 속도
+  var MIN_TRAVEL = 5;          // 두 장소 간 최소 이동(분)
+  var EXIT_BUFFER = 45;        // 도착편: 입국·수하물·이동 준비(분) 후 일정 시작
+  var CHECKIN_BUFFER = 120;    // 출발편: 비행기 출발 몇 분 전까지 공항 도착 권장
+  var DWELL = { attraction: 90, food: 60, cafe: 40, activity: 120, lodging: 30, transport: 0, airport: 0 };
+
+  function defaultDwell(type) { return DWELL[type] != null ? DWELL[type] : 60; }
+  function dwellMinutes(s) {
+    var v = parseInt(s && s.stayMin, 10);
+    if (isFinite(v) && v >= 0) return v;
+    return defaultDwell(s && s.type);
+  }
+  function travelMinutes(a, b) {
+    var m = haversine(a, b);
+    if (!isFinite(m)) return null;
+    var min = (m / 1000) / SPEED_KMH * 60;
+    return Math.max(MIN_TRAVEL, Math.round(min / 5) * 5);   // 5분 단위 반올림
+  }
+  function hmToMin(s) {
+    var m = /^(\d{1,2}):(\d{2})$/.exec(((s || "") + "").trim());
+    if (!m) return null;
+    var h = +m[1], mi = +m[2];
+    if (h > 23 || mi > 59) return null;
+    return h * 60 + mi;
+  }
+  function minToHm(v) {
+    if (v == null || !isFinite(v)) return "";
+    v = ((Math.round(v) % 1440) + 1440) % 1440;     // 자정 넘김 정규화
+    var h = Math.floor(v / 60), mi = v % 60;
+    return (h < 10 ? "0" : "") + h + ":" + (mi < 10 ? "0" : "") + mi;
+  }
+
+  // 이 stop의 '확정 도착 시각'(분): 도착편 공항 arriveTime, 또는 고정+시간.
+  function arriveAnchorMin(s) {
+    if (s.type === "airport" && s.arriveTime) return hmToMin(s.arriveTime);
+    if (s.fixed && s.time) return hmToMin(s.time);
+    return null;
+  }
+
+  /* buildSchedule(stops) — 하루 stops 배열의 시간 일정 계산.
+     반환: { active, startMin, items[], deadline }
+       active   : 공항 시각(도착/출발)이 입력돼 일정 계산이 켜졌는지
+       items[i] : { id, etaArrive, etaDepart, est(추정여부), travel, dwell,
+                    isAirportDepart, flightDepart, mustBeBy, late, overBy }
+       deadline : 출발편 정보 { stopId, flightDepart, mustBeBy, etaArrive, late, overBy } | null */
+  function buildSchedule(stops) {
+    stops = stops || [];
+    var hasAirportTime = stops.some(function (s) {
+      return s.type === "airport" && (s.arriveTime || s.departTime);
+    });
+    var items = stops.map(function (s) { return { id: s.id, etaArrive: null, etaDepart: null, est: false }; });
+    if (!hasAirportTime) return { active: false, startMin: null, items: items, deadline: null };
+
+    var cursor = null, prev = null, deadline = null, conflict = null, unknownChain = false;
+    for (var i = 0; i < stops.length; i++) {
+      var s = stops[i], it = items[i];
+      if (cursor != null && prev) {            // 이전 → 여기 이동
+        if (hasCoord(prev) && hasCoord(s)) {
+          var tm = travelMinutes(prev, s);
+          if (tm != null) { cursor += tm; it.travel = tm; }
+        } else {
+          it.travelUnknown = true; unknownChain = true;   // 좌표 없어 이동시간 추정 불가 → 이후 ETA 신뢰 불가
+        }
+      }
+      var anchor = arriveAnchorMin(s);
+      var depMin = (s.type === "airport" && s.departTime) ? hmToMin(s.departTime) : null;
+
+      if (anchor != null) {              // 확정 도착(도착편 공항/고정 일정) → 시각 재기준
+        if (cursor != null && anchor < cursor - 1) {       // 입력 시각이 직전 추정보다 이르면 동선과 모순
+          it.conflict = true;
+          conflict = conflict || { stopId: s.id, projected: cursor, anchor: anchor };
+        }
+        it.etaArrive = anchor; cursor = anchor; it.est = false;
+      } else if (cursor != null) {       // 추정 도착
+        it.etaArrive = cursor; it.est = true;
+      } else if (hmToMin(s.time) != null) {   // 시작 시드: 첫 시간 가진 장소
+        it.etaArrive = hmToMin(s.time); cursor = it.etaArrive; it.est = false;
+      }
+
+      if (depMin != null) {              // 출발편 공항(마감)
+        it.isAirportDepart = true;
+        it.flightDepart = depMin;
+        it.mustBeBy = depMin - CHECKIN_BUFFER;
+        // 좌표 누락으로 이동시간을 못 구한 구간이 있으면 ETA 신뢰 불가 → late 판정 보류(거짓 안전 방지)
+        if (it.etaArrive != null && !unknownChain) { it.late = it.etaArrive > it.mustBeBy; it.overBy = it.etaArrive - it.mustBeBy; }
+        it.etaDepart = depMin; cursor = depMin;
+        deadline = { stopId: s.id, flightDepart: depMin, mustBeBy: it.mustBeBy,
+                     etaArrive: (unknownChain ? null : it.etaArrive),
+                     late: !!it.late, overBy: (it.overBy != null ? it.overBy : null),
+                     travelUnknown: unknownChain };
+      } else if (s.type === "airport" && anchor != null) {   // 도착편 공항: 수속 버퍼 후 출발
+        it.etaDepart = anchor + EXIT_BUFFER; cursor = it.etaDepart; it.dwell = EXIT_BUFFER;
+      } else if (it.etaArrive != null) {                     // 일반 장소: 체류시간 가산
+        var dw = dwellMinutes(s);
+        it.etaDepart = it.etaArrive + dw; cursor = it.etaDepart; it.dwell = dw;
+      }
+      prev = s;
+    }
+    var startMin = null;
+    for (var j = 0; j < items.length; j++) { if (items[j].etaArrive != null) { startMin = items[j].etaArrive; break; } }
+    return { active: true, startMin: startMin, items: items, deadline: deadline, conflict: conflict };
+  }
+
   /* ---------- 구글맵 딥링크 ---------- */
   function locToken(s) {
     if (hasCoord(s)) return s.lat.toFixed(6) + "," + s.lon.toFixed(6);
@@ -215,6 +358,7 @@
     haversine: haversine, hasCoord: hasCoord, fmtDist: fmtDist,
     normLat: normLat, normLon: normLon,
     geocode: geocode, optimizeOrder: optimizeOrder, pathLen: pathLen,
+    buildSchedule: buildSchedule, minToHm: minToHm, hmToMin: hmToMin, defaultDwell: defaultDwell,
     dirURL: dirURL, multiDirURL: multiDirURL, searchURL: searchURL
   };
 })(window.TP = window.TP || {});

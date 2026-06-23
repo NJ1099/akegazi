@@ -23,7 +23,7 @@
           date: iso(10), label: "도착 · 난바 · 도톤보리",
           stops: [
             S({ type: "airport", title: "간사이공항(KIX) 도착", subtitle: "関西空港", address: "Kansai International Airport",
-                lat: 34.4347, lon: 135.2441, time: "13:00", durationLabel: "약 60~90분", indoor: true, fixed: true, closingNote: "연중무휴",
+                lat: 34.4347, lon: 135.2441, time: "13:00", arriveTime: "13:00", durationLabel: "약 60~90분", indoor: true, fixed: true, closingNote: "연중무휴",
                 note: "입국심사·수하물 찾고 난바행 열차로. 도심 도착은 약 15:00로 잡으면 여유." }),
             S({ type: "transport", title: "난카이 라피트 타고 난바로", subtitle: "南海ラピート → なんば", address: "간사이공항역 → 난바역",
                 lat: 34.6627, lon: 135.5026, time: "14:30", durationLabel: "약 40분", indoor: true, reservation: "recommended",

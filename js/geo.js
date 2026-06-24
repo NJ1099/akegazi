@@ -292,22 +292,26 @@
           it.travelUnknown = true; unknownChain = true;   // 좌표 없어 이동시간 추정 불가 → 이후 ETA 신뢰 불가
         }
       }
-      var anchor = arriveAnchorMin(s);
+      var anchor = arriveAnchorMin(s);                       // 확정 시각(공항 도착 / 고정+시간)
+      var manualMin = hmToMin(s.time);                       // 임의 stop의 사용자 입력 시각
       var depMin = (s.type === "airport" && s.departTime) ? hmToMin(s.departTime) : null;
 
-      if (anchor != null) {              // 확정 도착(도착편 공항/고정 일정) → 시각 재기준
-        if (cursor != null && anchor < cursor - 1) {       // 입력 시각이 직전 추정보다 이르면 동선과 모순
+      // 도착 시각 결정
+      if (anchor != null) {                                  // 확정 도착 → 시각 재기준
+        if (cursor != null && anchor < cursor - 1) {         // 입력 시각이 직전 추정보다 이르면 동선과 모순
           it.conflict = true;
           conflict = conflict || { stopId: s.id, projected: cursor, anchor: anchor };
         }
         it.etaArrive = anchor; cursor = anchor; it.est = false;
-      } else if (cursor != null) {       // 추정 도착
+      } else if (manualMin != null) {                        // 사용자 입력 시각: 그대로 표시 + 커서를 그 이상으로 전진
+        it.etaArrive = manualMin; it.est = false;            // (역행 방지 → 뒤 장소 ETA가 이 시각보다 이르게 안 나옴)
+        cursor = (cursor != null) ? Math.max(cursor, manualMin) : manualMin;
+      } else if (cursor != null) {                           // 추정 도착(ETA)
         it.etaArrive = cursor; it.est = true;
-      } else if (hmToMin(s.time) != null) {   // 시작 시드: 첫 시간 가진 장소
-        it.etaArrive = hmToMin(s.time); cursor = it.etaArrive; it.est = false;
       }
 
-      if (depMin != null) {              // 출발편 공항(마감)
+      // 출발 시각 / 다음 커서
+      if (depMin != null) {                                  // 출발편 공항(마감)
         it.isAirportDepart = true;
         it.flightDepart = depMin;
         it.mustBeBy = depMin - CHECKIN_BUFFER;
@@ -319,10 +323,9 @@
                      late: !!it.late, overBy: (it.overBy != null ? it.overBy : null),
                      travelUnknown: unknownChain };
       } else if (s.type === "airport" && anchor != null) {   // 도착편 공항: 수속 버퍼 후 출발
-        it.etaDepart = anchor + EXIT_BUFFER; cursor = it.etaDepart; it.dwell = EXIT_BUFFER;
-      } else if (it.etaArrive != null) {                     // 일반 장소: 체류시간 가산
-        var dw = dwellMinutes(s);
-        it.etaDepart = it.etaArrive + dw; cursor = it.etaDepart; it.dwell = dw;
+        cursor = anchor + EXIT_BUFFER; it.etaDepart = cursor; it.dwell = EXIT_BUFFER;
+      } else if (cursor != null) {                           // 일반/수동/추정: 체류시간 가산
+        var dw = dwellMinutes(s); cursor += dw; it.etaDepart = cursor; it.dwell = dw;
       }
       prev = s;
     }

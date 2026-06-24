@@ -9,7 +9,7 @@
   var KMAP = {
     y: "type", n: "title", u: "subtitle", a: "address", la: "lat", lo: "lon",
     tm: "time", dl: "durationLabel", at: "arriveTime", dp: "departTime", sm: "stayMin",
-    ab: "arriveBy", fa: "fareAmount", ca: "costAmount", pm: "payment",
+    ab: "arriveBy", fa: "fareAmount", ca: "costAmount", pm: "payment", cc: "costCategory",
     in: "indoor", oh: "openHours", cd: "closingDays",
     cn: "closingNote", rs: "reservation", rn: "reservationNote", fx: "fixed",
     ph: "photoSpot", nt: "note", co: "cost"
@@ -34,6 +34,7 @@
     if (typeof s.fareAmount === "number") c.fa = s.fareAmount;
     if (typeof s.costAmount === "number") c.ca = s.costAmount;
     if (s.payment) c.pm = s.payment;
+    if (s.costCategory) c.cc = s.costCategory;
     if (s.indoor === true || s.indoor === false) c.in = s.indoor;
     if (s.openHours) c.oh = s.openHours;
     if (s.closingDays && s.closingDays.length) c.cd = s.closingDays;
@@ -74,6 +75,7 @@
     };
     if (trip.region) compact.rg = trip.region;
     if (trip.currency && trip.currency !== "JPY") compact.cu = trip.currency;
+    if (trip.homeCurrency) compact.hc = trip.homeCurrency;
     return b64urlEncode(JSON.stringify(compact));
   }
   function decode(str) {
@@ -84,6 +86,7 @@
         title: c.t || "공유받은 일정",
         region: c.rg || "",
         currency: c.cu || "JPY",
+        homeCurrency: c.hc || "",
         days: c.d.map(function (day) {
           return { date: day.dt || "", label: day.l || "", stops: (day.s || []).map(expandStop) };
         })

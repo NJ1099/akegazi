@@ -134,7 +134,8 @@
         el("span", { text: "· " + TP.money.cfg(trip.currency).sym + " " + TP.money.cfg(trip.currency).name })
       ])
     ]));
-    var tripBud = R.budgetBanner(R.tripBudget(trip), trip.currency || "JPY", "여행 총 예산");
+    ensureFx(trip);
+    var tripBud = R.budgetBanner(R.tripBudget(trip), trip.currency || "JPY", "여행 총 예산", trip.homeCurrency || "");
     if (tripBud) viewEl.appendChild(tripBud);
 
     if (!trip.days.length) {
@@ -227,8 +228,10 @@
       if (wx && wx.rainy && mode === "timeline") drawTimeline(day, idx, bodySlot, true, schedule);
     });
 
-    var dcur = (store.activeTrip() && store.activeTrip().currency) || "JPY";
-    var dayBud = R.budgetBanner(R.dayBudget(day, dcur), dcur, "이 날 예산");
+    var dtrip = store.activeTrip();
+    var dcur = (dtrip && dtrip.currency) || "JPY", dhome = (dtrip && dtrip.homeCurrency) || "";
+    ensureFx(dtrip);
+    var dayBud = R.budgetBanner(R.dayBudget(day, dcur), dcur, "이 날 예산", dhome);
     if (dayBud) viewEl.appendChild(dayBud);
 
     viewEl.appendChild(el("div", { style: { marginTop: "16px", display: "flex", gap: "10px" } }, [
@@ -240,7 +243,8 @@
 
   function drawTimeline(day, idx, target, rainy, schedule) {
     target.innerHTML = "";
-    var ctx = { dayIndex: idx, rainy: !!rainy, schedule: schedule, currency: (store.activeTrip() && store.activeTrip().currency) || "JPY", onEdit: function (sid) { TP.editor.openStopModal(day.id, sid); } };
+    var _t = store.activeTrip();
+    var ctx = { dayIndex: idx, rainy: !!rainy, schedule: schedule, currency: (_t && _t.currency) || "JPY", homeCurrency: (_t && _t.homeCurrency) || "", onEdit: function (sid) { TP.editor.openStopModal(day.id, sid); } };
     var tl = R.timeline(day, ctx);
     target.appendChild(tl);
     if (day.stops.length > 1) attachDragReorder(tl, day.id);
@@ -405,6 +409,16 @@
     if (menuBtn) menuBtn.setAttribute("aria-expanded", "false");
     document.removeEventListener("click", onDocClick, true);
     document.removeEventListener("keydown", onMenuKey);
+  }
+
+  /* ---------- 환율 로드(필요 시 1회 → 재렌더로 실값 반영) ---------- */
+  function ensureFx(trip) {
+    if (!trip) return;
+    var hc = trip.homeCurrency;
+    if (!hc || hc === trip.currency) return;
+    if (TP.money.getCachedRate(trip.currency, hc) != null) return;   // 이미 조회됨
+    var myEpoch = epoch;
+    TP.money.ensureRate(trip.currency, hc).then(function () { if (myEpoch === epoch) render(); });
   }
 
   /* ---------- 유틸 ---------- */

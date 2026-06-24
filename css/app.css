@@ -461,8 +461,11 @@ a { color: inherit; }
   padding: 13px 15px;
 }
 .budget__top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-.budget__label { font-size: 12.5px; font-weight: 800; color: var(--text-2); }
+.budget__label { font-size: 12.5px; font-weight: 800; color: var(--text-2); flex: 0 0 auto; }
+.budget__amt { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .budget__total { font-size: 19px; font-weight: 850; color: var(--c-green); letter-spacing: -.02em; }
+.budget__conv { font-size: 12px; font-weight: 700; color: var(--text-3); }
+.budget__pay { margin-top: 7px; font-size: 11.5px; color: var(--text-3); font-weight: 700; }
 .budget__parts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
 .bg-chip {
   font-size: 11px; font-weight: 700; color: var(--text-2);

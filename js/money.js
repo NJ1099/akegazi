@@ -44,6 +44,46 @@
     return roundStep(f, c.step);
   }
 
+  /* ---------- 환율 환산 ---------- */
+  var rateCache = {};   // "JPY>KRW" → 1 from당 to 환율
+  var fetching = {};
+  var USD_VAL = { USD: 1, JPY: 0.0067, KRW: 0.00074, EUR: 1.08 };   // 폴백 근사(1단위의 USD 가치)
+  function rateKey(a, b) { return a + ">" + b; }
+  function fallbackRate(from, to) { return (USD_VAL[from] && USD_VAL[to]) ? USD_VAL[from] / USD_VAL[to] : null; }
+  function rate(from, to) {                 // 즉시값: 실값 캐시 우선, 없으면 폴백 근사
+    if (from === to) return 1;
+    var v = rateCache[rateKey(from, to)];
+    return (v != null) ? v : fallbackRate(from, to);
+  }
+  function getCachedRate(from, to) {        // 실/폴백 캐시만(미조회면 null) — 갱신 필요 판단용
+    if (from === to) return 1;
+    var v = rateCache[rateKey(from, to)];
+    return (v != null) ? v : null;
+  }
+  function ensureRate(from, to) {           // 실 환율 비동기 로드 → 캐시(실패 시 폴백 캐시)
+    if (from === to) return Promise.resolve(1);
+    var k = rateKey(from, to);
+    if (rateCache[k] != null) return Promise.resolve(rateCache[k]);
+    if (fetching[k]) return fetching[k];
+    var url = "https://open.er-api.com/v6/latest/" + encodeURIComponent(from);
+    fetching[k] = TP.util.fetchJSON(url, { timeout: 8000 }).then(function (j) {
+      var r = j && j.rates && j.rates[to];
+      rateCache[k] = (typeof r === "number" && isFinite(r) && r > 0) ? r : fallbackRate(from, to);
+      delete fetching[k]; return rateCache[k];
+    }).catch(function () { rateCache[k] = fallbackRate(from, to); delete fetching[k]; return rateCache[k]; });
+    return fetching[k];
+  }
+  function convert(amount, from, to) {
+    if (amount == null) return null;
+    var r = rate(from, to);
+    return (r != null) ? amount * r : null;
+  }
+  function formatConv(amount, from, to) {   // "≈ ₩28,500" (from==to이거나 불가면 "")
+    if (!to || from === to || amount == null) return "";
+    var c = convert(amount, from, to);
+    return (c != null) ? "≈ " + format(c, to) : "";
+  }
+
   // 지역 텍스트 → 추천 통화 코드(모르면 null)
   function currencyForRegion(region) {
     var r = (region || "").toLowerCase();
@@ -56,6 +96,7 @@
 
   TP.money = {
     CUR: CUR, ORDER: ORDER, cfg: cfg, symbol: symbol,
-    format: format, estimateFare: estimateFare, currencyForRegion: currencyForRegion
+    format: format, estimateFare: estimateFare, currencyForRegion: currencyForRegion,
+    rate: rate, getCachedRate: getCachedRate, ensureRate: ensureRate, convert: convert, formatConv: formatConv
   };
 })(window.TP = window.TP || {});

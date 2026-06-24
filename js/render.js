@@ -134,13 +134,14 @@
         el("span.pin", { html: "🕐" }), el("span", { text: stop.openHours })
       ]));
     }
-    // 경비 (금액 + 결제수단)
+    // 경비 (카테고리 + 금액 + 결제수단 + 환산)
     if (typeof stop.costAmount === "number" && stop.costAmount > 0) {
-      var ccur = (ctx && ctx.currency) || "JPY";
-      var payLabel = { credit: "신용카드", debit: "체크카드", cash: "현금" }[stop.payment] || "경비";
+      var ccur = (ctx && ctx.currency) || "JPY", hcur = (ctx && ctx.homeCurrency) || "";
+      var payLabel = { credit: "신용", debit: "체크", cash: "현금" }[stop.payment];
+      var conv = TP.money.formatConv(stop.costAmount, ccur, hcur);
       card.appendChild(el("div.stop__addr", null, [
-        el("span.pin", { html: stop.payment === "cash" ? "💵" : "💳" }),
-        el("span", { text: payLabel + " " + TP.money.format(stop.costAmount, ccur) })
+        el("span.pin", { html: "💰" }),
+        el("span", { text: catLabel(inferCategory(stop)) + " " + TP.money.format(stop.costAmount, ccur) + (payLabel ? " · " + payLabel : "") + (conv ? " (" + conv + ")" : "") })
       ]));
     }
 
@@ -326,6 +327,20 @@
     return null;
   }
 
+  /* ---- 경비 카테고리 ---- */
+  var COST_CATS = [["food", "🍴 식비"], ["ticket", "🎟 입장료"], ["lodging", "🏨 숙소"], ["shopping", "🛍 쇼핑"], ["etc", "🧾 기타"]];
+  var CAT_LABEL = {}; COST_CATS.forEach(function (c) { CAT_LABEL[c[0]] = c[1]; });
+  function inferCategory(stop) {                          // 미지정 시 종류로 추정
+    if (stop.costCategory) return stop.costCategory;
+    switch (stop.type) {
+      case "food": case "cafe": return "food";
+      case "lodging": return "lodging";
+      case "activity": case "attraction": return "ticket";
+      default: return "etc";
+    }
+  }
+  function catLabel(cat) { return CAT_LABEL[cat] || "🧾 기타"; }
+
   /* ---- 예산(경비 + 예상 교통비) ---- */
   function legFare(prev, s, currency) {
     if (!s) return 0;
@@ -339,42 +354,54 @@
     }
     return TP.money.estimateFare(km, mode, currency);
   }
+  function emptyCat() { return { food: 0, ticket: 0, lodging: 0, shopping: 0, etc: 0 }; }
   function dayBudget(day, currency) {
-    var byPay = { credit: 0, debit: 0, cash: 0, other: 0 }, dest = 0, transport = 0;
+    var byPay = { credit: 0, debit: 0, cash: 0, other: 0 }, byCat = emptyCat(), dest = 0, transport = 0;
     (day.stops || []).forEach(function (s, i) {
       if (typeof s.costAmount === "number" && s.costAmount > 0) {
         dest += s.costAmount;
         var pm = (s.payment === "credit" || s.payment === "debit" || s.payment === "cash") ? s.payment : "other";
         byPay[pm] += s.costAmount;
+        byCat[inferCategory(s)] += s.costAmount;
       }
       if (i > 0) transport += legFare(day.stops[i - 1], s, currency);
     });
-    return { dest: dest, transport: transport, total: dest + transport, byPay: byPay };
+    return { dest: dest, transport: transport, total: dest + transport, byPay: byPay, byCat: byCat };
   }
   function tripBudget(trip) {
     var cur = (trip && trip.currency) || "JPY";
-    var agg = { dest: 0, transport: 0, total: 0, byPay: { credit: 0, debit: 0, cash: 0, other: 0 } };
+    var agg = { dest: 0, transport: 0, total: 0, byPay: { credit: 0, debit: 0, cash: 0, other: 0 }, byCat: emptyCat() };
     (trip && trip.days || []).forEach(function (d) {
       var b = dayBudget(d, cur);
       agg.dest += b.dest; agg.transport += b.transport; agg.total += b.total;
       ["credit", "debit", "cash", "other"].forEach(function (k) { agg.byPay[k] += b.byPay[k]; });
+      ["food", "ticket", "lodging", "shopping", "etc"].forEach(function (k) { agg.byCat[k] += b.byCat[k]; });
     });
     return agg;
   }
-  function budgetBanner(b, currency, label) {
+  function budgetBanner(b, currency, label, homeCur) {
     if (!b || b.total <= 0) return null;
-    var M = TP.money, parts = [];
-    if (b.byPay.credit > 0) parts.push(el("span.bg-chip", { text: "💳 신용 " + M.format(b.byPay.credit, currency) }));
-    if (b.byPay.debit > 0) parts.push(el("span.bg-chip", { text: "💳 체크 " + M.format(b.byPay.debit, currency) }));
-    if (b.byPay.cash > 0) parts.push(el("span.bg-chip", { text: "💵 현금 " + M.format(b.byPay.cash, currency) }));
-    if (b.byPay.other > 0) parts.push(el("span.bg-chip", { text: "• 기타 " + M.format(b.byPay.other, currency) }));
-    if (b.transport > 0) parts.push(el("span.bg-chip", { text: "🚌 교통(예상) " + M.format(b.transport, currency) }));
+    var M = TP.money;
+    // 카테고리별 칩 + 예상 교통비
+    var catParts = [];
+    COST_CATS.forEach(function (c) { if (b.byCat[c[0]] > 0) catParts.push(el("span.bg-chip", { text: c[1] + " " + M.format(b.byCat[c[0]], currency) })); });
+    if (b.transport > 0) catParts.push(el("span.bg-chip", { text: "🚌 교통(예상) " + M.format(b.transport, currency) }));
+    // 결제수단 줄
+    var pay = [];
+    if (b.byPay.credit > 0) pay.push("신용 " + M.format(b.byPay.credit, currency));
+    if (b.byPay.debit > 0) pay.push("체크 " + M.format(b.byPay.debit, currency));
+    if (b.byPay.cash > 0) pay.push("현금 " + M.format(b.byPay.cash, currency));
+    var conv = M.formatConv(b.total, currency, homeCur);
     return el("div.budget", null, [
       el("div.budget__top", null, [
         el("span.budget__label", { text: label || "예산" }),
-        el("span.budget__total", { text: M.format(b.total, currency) })
+        el("div.budget__amt", null, [
+          el("span.budget__total", { text: M.format(b.total, currency) }),
+          conv ? el("span.budget__conv", { text: conv }) : null
+        ])
       ]),
-      parts.length ? el("div.budget__parts", null, parts) : null
+      catParts.length ? el("div.budget__parts", null, catParts) : null,
+      pay.length ? el("div.budget__pay", { text: "💳 결제: " + pay.join(" · ") }) : null
     ]);
   }
 
@@ -382,6 +409,7 @@
     timeline: timeline, stopCard: stopCard, badgesFor: badgesFor,
     weatherBanner: weatherBanner, rainBanner: rainBanner, scheduleBanner: scheduleBanner,
     dayBudget: dayBudget, tripBudget: tripBudget, budgetBanner: budgetBanner,
+    COST_CATS: COST_CATS, inferCategory: inferCategory, catLabel: catLabel,
     typeIcon: typeIcon, TYPE_ICON: TYPE_ICON, TYPE_LABEL: TYPE_LABEL,
     closingInfo: closingInfo
   };

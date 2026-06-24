@@ -236,9 +236,21 @@
           onclick: function () { f.payment = po[0]; U.$$(".chip", payWrap).forEach(function (x) { x.classList.remove("is-on"); }); this.classList.add("is-on"); }
         }, [po[1]]));
       });
+      var catWrap = el("div.chips");
+      var defCat = TP.render.inferCategory(f);
+      TP.render.COST_CATS.forEach(function (c) {
+        catWrap.appendChild(el("button.chip" + (((f.costCategory || defCat) === c[0]) ? ".is-on" : ""), {
+          type: "button",
+          onclick: function () { f.costCategory = c[0]; U.$$(".chip", catWrap).forEach(function (x) { x.classList.remove("is-on"); }); this.classList.add("is-on"); }
+        }, [c[1]]));
+      });
       box.appendChild(field("💳 경비 (선택)",
-        el("div", null, [wrapLabeled("금액 (" + TP.money.symbol(cur) + ")", costInput), el("div", { style: { marginTop: "8px" } }, [payWrap])]),
-        "총 경비 합계에 결제수단별로 반영돼요"));
+        el("div", null, [
+          wrapLabeled("금액 (" + TP.money.symbol(cur) + ")", costInput),
+          el("div", { style: { marginTop: "8px" } }, [wrapLabeled("분류", catWrap)]),
+          el("div", { style: { marginTop: "8px" } }, [wrapLabeled("결제수단", payWrap)])
+        ]),
+        "분류·결제수단별 + 환산까지 예산에 반영돼요"));
 
       // 영업시간
       box.appendChild(field("영업시간 (선택)",
@@ -395,6 +407,7 @@
     var f = {
       title: existing ? existing.title : "", region: existing ? existing.region : "",
       currency: existing ? (existing.currency || "JPY") : "JPY",
+      homeCurrency: existing ? (existing.homeCurrency || "") : "KRW",
       start: dates[0] || "", end: dates[dates.length - 1] || "",
       arriveTime: "", departTime: ""
     };
@@ -425,6 +438,18 @@
       renderCurChips();
       box.appendChild(field("통화", curWrap));
 
+      var homeWrap = el("div.chips");
+      function renderHomeChips() {
+        homeWrap.innerHTML = "";
+        homeWrap.appendChild(el("button.chip" + (!f.homeCurrency ? ".is-on" : ""), { type: "button", onclick: function () { f.homeCurrency = ""; renderHomeChips(); } }, ["없음"]));
+        TP.money.ORDER.forEach(function (code) {
+          var c = TP.money.cfg(code);
+          homeWrap.appendChild(el("button.chip" + (f.homeCurrency === code ? ".is-on" : ""), { type: "button", onclick: function () { f.homeCurrency = code; renderHomeChips(); } }, [c.sym + " " + c.name]));
+        });
+      }
+      renderHomeChips();
+      box.appendChild(field("내 통화 (환산 표시)", homeWrap, "통화와 다르면 금액 옆에 ≈ 환산값을 보여줘요(실시간 환율)"));
+
       if (!existing) {
         box.appendChild(field("", el("div.row", null, [
           wrapLabeled("시작일", el("input.input", { type: "date", value: f.start, oninput: function () { f.start = this.value; } })),
@@ -442,10 +467,10 @@
             if (!f.title.trim() && !f.region.trim()) { U.toast("여행 이름이나 지역을 입력하세요"); titleInput.focus(); return; }
             var title = f.title.trim() || (f.region.trim() + " 여행");
             if (existing) {
-              store.updateTrip(existing.id, { title: title, region: f.region.trim(), currency: f.currency });
+              store.updateTrip(existing.id, { title: title, region: f.region.trim(), currency: f.currency, homeCurrency: f.homeCurrency });
               close(); U.toast("여행 정보를 수정했어요"); return;
             }
-            var t = store.addTrip({ title: title, region: f.region.trim(), currency: f.currency });
+            var t = store.addTrip({ title: title, region: f.region.trim(), currency: f.currency, homeCurrency: f.homeCurrency });
             var made = generateDaysAndFlights(f);
             close();
             location.hash = "#/trip/" + t.id;

@@ -8,7 +8,7 @@
  *
  *   캐시 무효화가 필요하면 CACHE 이름의 버전을 올린다(예: akegazi-v2).
  */
-var CACHE = "akegazi-v2";
+var CACHE = "akegazi-v3";
 
 self.addEventListener("install", function () {
   self.skipWaiting();   // 새 SW를 대기 없이 즉시 활성 후보로

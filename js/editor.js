@@ -64,6 +64,14 @@
     var existing = stopId ? store.stop(dayId, stopId) : null;
     var f = Object.assign(store.defaultStop(), existing ? JSON.parse(JSON.stringify(existing)) : {});
     var pickMap = null;
+    var trip = store.activeTrip();
+    var cur = (trip && trip.currency) || "JPY";
+    var dayObj = store.day(dayId);
+    var prevStop = null;                                         // 교통비 추정용: 직전 장소
+    if (dayObj) {
+      if (existing) { var ei = dayObj.stops.indexOf(existing); prevStop = ei > 0 ? dayObj.stops[ei - 1] : null; }
+      else { prevStop = dayObj.stops.length ? dayObj.stops[dayObj.stops.length - 1] : null; }
+    }
 
     modal(function (box, close) {
       box.appendChild(el("div.modal__title", { text: existing ? "장소 편집" : "장소 추가" }));
@@ -189,6 +197,49 @@
       box.appendChild(field("소요시간 표시 (선택)",
         el("input.input", { value: f.durationLabel, placeholder: "예: 약 60~90분", oninput: function () { f.durationLabel = this.value; } })));
 
+      // ----- 이동수단 (이전 → 여기): 첫 장소가 아니면 -----
+      if (prevStop) {
+        var MODES = [["transit", "🚌 대중교통"], ["taxi", "🚕 택시"], ["walk", "🚶 도보"], ["none", "안 함"]];
+        var fareInput = el("input.input", {
+          type: "number", min: "0", value: (f.fareAmount != null ? f.fareAmount : ""),
+          oninput: function () { var v = parseFloat(this.value); f.fareAmount = (isFinite(v) && v >= 0) ? v : null; }
+        });
+        var modeWrap = el("div.chips");
+        function legKm() { return (TP.geo.hasCoord(prevStop) && TP.geo.hasCoord(f)) ? TP.geo.haversine(prevStop, f) / 1000 : null; }
+        function updFare() {
+          var m = f.arriveBy;
+          if (!m) fareInput.placeholder = "이동수단을 고르면 예상요금";
+          else if (m === "walk" || m === "none") fareInput.placeholder = "무료";
+          else fareInput.placeholder = "예상 " + TP.money.format(TP.money.estimateFare(legKm(), m, cur), cur);
+        }
+        MODES.forEach(function (mo) {
+          modeWrap.appendChild(el("button.chip" + (f.arriveBy === mo[0] ? ".is-on" : ""), {
+            type: "button",
+            onclick: function () { f.arriveBy = mo[0]; U.$$(".chip", modeWrap).forEach(function (x) { x.classList.remove("is-on"); }); this.classList.add("is-on"); updFare(); }
+          }, [mo[1]]));
+        });
+        updFare();
+        box.appendChild(field("이전 장소 → 여기 이동수단",
+          el("div", null, [modeWrap, el("div", { style: { marginTop: "8px" } }, [wrapLabeled("교통비 (" + TP.money.symbol(cur) + ", 비우면 예상값)", fareInput)])]),
+          "거리 기반 예상요금이며, 직접 입력하면 그 값으로 합산돼요"));
+      }
+
+      // ----- 경비 (결제수단 + 금액) -----
+      var costInput = el("input.input", {
+        type: "number", min: "0", value: (f.costAmount != null ? f.costAmount : ""), placeholder: "예: 3000",
+        oninput: function () { var v = parseFloat(this.value); f.costAmount = (isFinite(v) && v >= 0) ? v : null; }
+      });
+      var payWrap = el("div.chips");
+      [["credit", "💳 신용카드"], ["debit", "💳 체크카드"], ["cash", "💵 현금"], ["", "없음"]].forEach(function (po) {
+        payWrap.appendChild(el("button.chip" + ((f.payment || "") === po[0] ? ".is-on" : ""), {
+          type: "button",
+          onclick: function () { f.payment = po[0]; U.$$(".chip", payWrap).forEach(function (x) { x.classList.remove("is-on"); }); this.classList.add("is-on"); }
+        }, [po[1]]));
+      });
+      box.appendChild(field("💳 경비 (선택)",
+        el("div", null, [wrapLabeled("금액 (" + TP.money.symbol(cur) + ")", costInput), el("div", { style: { marginTop: "8px" } }, [payWrap])]),
+        "총 경비 합계에 결제수단별로 반영돼요"));
+
       // 영업시간
       box.appendChild(field("영업시간 (선택)",
         el("input.input", { value: f.openHours, placeholder: "예: 11:00~23:00 (L.O.22:00)", oninput: function () { f.openHours = this.value; } })));
@@ -309,5 +360,102 @@
     });
   }
 
-  TP.editor = { openStopModal: openStopModal, openDayModal: openDayModal, modal: modal };
+  /* ---------- 여행(Trip) 생성/편집 모달 ---------- */
+  function dateRangeList(start, end) {
+    var out = [];
+    var s = TP.util.parseDate(start); if (!s) return out;
+    var e = TP.util.parseDate(end) || s;
+    if (e < s) { var ts = start; start = end; end = ts; s = TP.util.parseDate(start); e = TP.util.parseDate(end); }  // 뒤바뀐 입력 보정
+    var iso = start, guard = 0;
+    while (guard++ < 90) {                                   // 최대 90일 방어
+      out.push(iso);
+      if (TP.util.parseDate(iso) >= e) break;
+      iso = TP.util.addDaysISO(iso, 1);
+    }
+    return out;
+  }
+  // 새 여행(활성)에 날짜들 + 도착/출발 공항(고정) 자동 생성. 생성한 날짜 수 반환.
+  function generateDaysAndFlights(f) {
+    var dates = dateRangeList(f.start, f.end);
+    if (!dates.length) return 0;
+    var dayIds = [];
+    dates.forEach(function (dt) { var d = store.addDay({ date: dt }); if (d) dayIds.push(d.id); });
+    if (f.arriveTime && dayIds.length) {
+      store.addStop(dayIds[0], { type: "airport", title: (f.region ? f.region + " 도착" : "도착 공항"), arriveTime: f.arriveTime, time: f.arriveTime, fixed: true, indoor: true });
+    }
+    if (f.departTime && dayIds.length) {
+      store.addStop(dayIds[dayIds.length - 1], { type: "airport", title: (f.region ? f.region + " 출발" : "출발 공항"), departTime: f.departTime, fixed: true, indoor: true });
+    }
+    return dates.length;
+  }
+
+  function openTripModal(tripId) {
+    var existing = tripId ? store.trip(tripId) : null;
+    var dates = existing ? existing.days.map(function (d) { return d.date; }).filter(Boolean).sort() : [];
+    var f = {
+      title: existing ? existing.title : "", region: existing ? existing.region : "",
+      currency: existing ? (existing.currency || "JPY") : "JPY",
+      start: dates[0] || "", end: dates[dates.length - 1] || "",
+      arriveTime: "", departTime: ""
+    };
+    var userPickedCur = !!existing;   // 기존 여행은 사용자가 정한 통화로 간주(자동추천 덮어쓰기 방지)
+
+    modal(function (box, close) {
+      box.appendChild(el("div.modal__title", { text: existing ? "여행 정보 편집" : "새 여행" }));
+      box.appendChild(el("div.modal__sub", { text: existing ? "이름·지역·통화를 수정해요. 날짜·공항은 일정에서 편집하세요." : "지역·기간을 넣으면 날짜와 도착/출발 공항(고정)을 자동으로 만들어 드려요." }));
+
+      var titleInput = el("input.input", { value: f.title, placeholder: "예: 후쿠오카 가족여행", oninput: function () { f.title = this.value; } });
+      box.appendChild(field("여행 이름", titleInput));
+
+      var curWrap = el("div.chips");
+      function renderCurChips() {
+        curWrap.innerHTML = "";
+        TP.money.ORDER.forEach(function (code) {
+          var c = TP.money.cfg(code);
+          curWrap.appendChild(el("button.chip" + (f.currency === code ? ".is-on" : ""), {
+            type: "button", onclick: function () { f.currency = code; userPickedCur = true; renderCurChips(); }
+          }, [c.sym + " " + c.name]));
+        });
+      }
+      var regionInput = el("input.input", {
+        value: f.region, placeholder: "예: 후쿠오카 / 오사카 / 서울",
+        oninput: function () { f.region = this.value; if (!userPickedCur) { var rec = TP.money.currencyForRegion(f.region); if (rec) { f.currency = rec; renderCurChips(); } } }
+      });
+      box.appendChild(field("지역", regionInput, "지역을 넣으면 통화를 자동 추천해요"));
+      renderCurChips();
+      box.appendChild(field("통화", curWrap));
+
+      if (!existing) {
+        box.appendChild(field("", el("div.row", null, [
+          wrapLabeled("시작일", el("input.input", { type: "date", value: f.start, oninput: function () { f.start = this.value; } })),
+          wrapLabeled("종료일", el("input.input", { type: "date", value: f.end, oninput: function () { f.end = this.value; } }))
+        ]), "이 기간의 날짜들이 자동으로 만들어져요"));
+        box.appendChild(field("✈️ 비행기 (선택)", el("div.row", null, [
+          wrapLabeled("도착 시각(첫날)", el("input.input", { type: "time", value: f.arriveTime, oninput: function () { f.arriveTime = this.value; } })),
+          wrapLabeled("출발 시각(마지막날)", el("input.input", { type: "time", value: f.departTime, oninput: function () { f.departTime = this.value; } }))
+        ]), "넣으면 첫날 도착공항·마지막날 출발공항을 고정 일정으로 자동 추가(편집 가능)"));
+      }
+
+      box.appendChild(el("div.modal__actions", null, [
+        el("button.btn.btn--block", {
+          onclick: function () {
+            if (!f.title.trim() && !f.region.trim()) { U.toast("여행 이름이나 지역을 입력하세요"); titleInput.focus(); return; }
+            var title = f.title.trim() || (f.region.trim() + " 여행");
+            if (existing) {
+              store.updateTrip(existing.id, { title: title, region: f.region.trim(), currency: f.currency });
+              close(); U.toast("여행 정보를 수정했어요"); return;
+            }
+            var t = store.addTrip({ title: title, region: f.region.trim(), currency: f.currency });
+            var made = generateDaysAndFlights(f);
+            close();
+            location.hash = "#/trip/" + t.id;
+            U.toast(made > 0 ? (made + "일 일정을 만들었어요") : "여행을 만들었어요");
+          }
+        }, [existing ? "저장" : "만들기"]),
+        el("button.btn.btn--block.btn--ghost", { onclick: close }, ["취소"])
+      ]));
+    });
+  }
+
+  TP.editor = { openStopModal: openStopModal, openDayModal: openDayModal, openTripModal: openTripModal, modal: modal };
 })(window.TP = window.TP || {});

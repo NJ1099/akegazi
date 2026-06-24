@@ -91,6 +91,28 @@
     ]);
     card.appendChild(head);
 
+    // 이동수단 (이전 → 여기): 첫 장소가 아니면 빠른 선택 칩 + 교통비
+    if (prevStop) {
+      var cur = (ctx && ctx.currency) || "JPY";
+      var estimable = TP.geo.hasCoord(prevStop) && TP.geo.hasCoord(stop);
+      var effMode = stop.arriveBy || (estimable ? "transit" : "");   // 표시/하이라이트용 유효 모드(예산과 일치)
+      var leg = el("div.leg");
+      [["transit", "🚌"], ["taxi", "🚕"], ["walk", "🚶"], ["none", "✕"]].forEach(function (mo) {
+        leg.appendChild(el("button.leg__chip" + (effMode === mo[0] ? ".is-on" : ""), {
+          title: { transit: "대중교통", taxi: "택시", walk: "도보", none: "이동 안 함" }[mo[0]],
+          "aria-label": "이동수단 " + mo[0],
+          onclick: function (e) { e.stopPropagation(); TP.store.updateStop(day.id, stop.id, { arriveBy: mo[0], fareAmount: null }); }
+        }, [mo[1]]));
+      });
+      var fareText;
+      if (effMode === "walk") fareText = "도보";
+      else if (effMode === "none") fareText = "이동 안 함";
+      else if (!effMode) fareText = "이동수단 선택";
+      else fareText = TP.money.format(legFare(prevStop, stop, cur), cur) + (typeof stop.fareAmount === "number" ? "" : " 예상");
+      leg.appendChild(el("span.leg__fare", { text: fareText }));
+      card.appendChild(leg);
+    }
+
     // 공항 시각 (도착/출발)
     if (stop.type === "airport" && (stop.arriveTime || stop.departTime)) {
       var apBits = [];
@@ -110,6 +132,15 @@
     if (stop.openHours) {
       card.appendChild(el("div.stop__addr", null, [
         el("span.pin", { html: "🕐" }), el("span", { text: stop.openHours })
+      ]));
+    }
+    // 경비 (금액 + 결제수단)
+    if (typeof stop.costAmount === "number" && stop.costAmount > 0) {
+      var ccur = (ctx && ctx.currency) || "JPY";
+      var payLabel = { credit: "신용카드", debit: "체크카드", cash: "현금" }[stop.payment] || "경비";
+      card.appendChild(el("div.stop__addr", null, [
+        el("span.pin", { html: stop.payment === "cash" ? "💵" : "💳" }),
+        el("span", { text: payLabel + " " + TP.money.format(stop.costAmount, ccur) })
       ]));
     }
 
@@ -295,9 +326,62 @@
     return null;
   }
 
+  /* ---- 예산(경비 + 예상 교통비) ---- */
+  function legFare(prev, s, currency) {
+    if (!s) return 0;
+    if (typeof s.fareAmount === "number") return s.fareAmount;     // 직접 입력 우선
+    var mode = s.arriveBy;
+    if (mode === "walk" || mode === "none") return 0;
+    var km = (prev && TP.geo.hasCoord(prev) && TP.geo.hasCoord(s)) ? TP.geo.haversine(prev, s) / 1000 : null;
+    if (!mode) {                          // 미선택: 거리 알 때만 대중교통으로 추정(무좌표 유령요금 방지)
+      if (km == null) return 0;
+      mode = "transit";
+    }
+    return TP.money.estimateFare(km, mode, currency);
+  }
+  function dayBudget(day, currency) {
+    var byPay = { credit: 0, debit: 0, cash: 0, other: 0 }, dest = 0, transport = 0;
+    (day.stops || []).forEach(function (s, i) {
+      if (typeof s.costAmount === "number" && s.costAmount > 0) {
+        dest += s.costAmount;
+        var pm = (s.payment === "credit" || s.payment === "debit" || s.payment === "cash") ? s.payment : "other";
+        byPay[pm] += s.costAmount;
+      }
+      if (i > 0) transport += legFare(day.stops[i - 1], s, currency);
+    });
+    return { dest: dest, transport: transport, total: dest + transport, byPay: byPay };
+  }
+  function tripBudget(trip) {
+    var cur = (trip && trip.currency) || "JPY";
+    var agg = { dest: 0, transport: 0, total: 0, byPay: { credit: 0, debit: 0, cash: 0, other: 0 } };
+    (trip && trip.days || []).forEach(function (d) {
+      var b = dayBudget(d, cur);
+      agg.dest += b.dest; agg.transport += b.transport; agg.total += b.total;
+      ["credit", "debit", "cash", "other"].forEach(function (k) { agg.byPay[k] += b.byPay[k]; });
+    });
+    return agg;
+  }
+  function budgetBanner(b, currency, label) {
+    if (!b || b.total <= 0) return null;
+    var M = TP.money, parts = [];
+    if (b.byPay.credit > 0) parts.push(el("span.bg-chip", { text: "💳 신용 " + M.format(b.byPay.credit, currency) }));
+    if (b.byPay.debit > 0) parts.push(el("span.bg-chip", { text: "💳 체크 " + M.format(b.byPay.debit, currency) }));
+    if (b.byPay.cash > 0) parts.push(el("span.bg-chip", { text: "💵 현금 " + M.format(b.byPay.cash, currency) }));
+    if (b.byPay.other > 0) parts.push(el("span.bg-chip", { text: "• 기타 " + M.format(b.byPay.other, currency) }));
+    if (b.transport > 0) parts.push(el("span.bg-chip", { text: "🚌 교통(예상) " + M.format(b.transport, currency) }));
+    return el("div.budget", null, [
+      el("div.budget__top", null, [
+        el("span.budget__label", { text: label || "예산" }),
+        el("span.budget__total", { text: M.format(b.total, currency) })
+      ]),
+      parts.length ? el("div.budget__parts", null, parts) : null
+    ]);
+  }
+
   TP.render = {
     timeline: timeline, stopCard: stopCard, badgesFor: badgesFor,
     weatherBanner: weatherBanner, rainBanner: rainBanner, scheduleBanner: scheduleBanner,
+    dayBudget: dayBudget, tripBudget: tripBudget, budgetBanner: budgetBanner,
     typeIcon: typeIcon, TYPE_ICON: TYPE_ICON, TYPE_LABEL: TYPE_LABEL,
     closingInfo: closingInfo
   };

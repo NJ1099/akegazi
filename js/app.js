@@ -100,7 +100,7 @@
       var card = el("button.trip-card", { onclick: function () { location.hash = "#/trip/" + t.id; } }, [
         el("div.trip-card__main", null, [
           el("div.trip-card__title", { text: t.title || "이름 없는 여행" }),
-          el("div.trip-card__meta", { text: (range || "날짜 미정") + " · " + t.days.length + "일 · " + stopCount + "곳" })
+          el("div.trip-card__meta", { text: (t.region ? "📍 " + t.region + " · " : "") + (range || "날짜 미정") + " · " + t.days.length + "일 · " + stopCount + "곳" })
         ]),
         el("span.trip-card__go", { html: "›" })
       ]);
@@ -123,12 +123,19 @@
     var totalStops = trip.days.reduce(function (a, d) { return a + d.stops.length; }, 0);
     var range = dateRange(trip.days);
     viewEl.appendChild(el("div.trip-head", null, [
-      titleInput,
+      el("div", { style: { display: "flex", alignItems: "center", gap: "8px" } }, [
+        titleInput,
+        el("button.day-hero__edit", { title: "여행 정보(지역·통화) 편집", onclick: function () { TP.editor.openTripModal(trip.id); } }, ["✎"])
+      ]),
       el("div.trip-head__meta", null, [
+        trip.region ? el("span", { text: "📍 " + trip.region }) : null,
         el("span", { text: range || "날짜를 추가해 일정을 시작하세요" }),
-        trip.days.length ? el("span", { text: "· " + trip.days.length + "일 · " + totalStops + "곳" }) : null
+        trip.days.length ? el("span", { text: "· " + trip.days.length + "일 · " + totalStops + "곳" }) : null,
+        el("span", { text: "· " + TP.money.cfg(trip.currency).sym + " " + TP.money.cfg(trip.currency).name })
       ])
     ]));
+    var tripBud = R.budgetBanner(R.tripBudget(trip), trip.currency || "JPY", "여행 총 예산");
+    if (tripBud) viewEl.appendChild(tripBud);
 
     if (!trip.days.length) {
       viewEl.appendChild(el("div.empty", null, [
@@ -220,6 +227,10 @@
       if (wx && wx.rainy && mode === "timeline") drawTimeline(day, idx, bodySlot, true, schedule);
     });
 
+    var dcur = (store.activeTrip() && store.activeTrip().currency) || "JPY";
+    var dayBud = R.budgetBanner(R.dayBudget(day, dcur), dcur, "이 날 예산");
+    if (dayBud) viewEl.appendChild(dayBud);
+
     viewEl.appendChild(el("div", { style: { marginTop: "16px", display: "flex", gap: "10px" } }, [
       el("button.btn.btn--ghost.btn--sm", { style: { flex: "1" }, onclick: function () { optimize(day); } }, ["🧭 동선 최적화"]),
       el("button.btn.btn--ghost.btn--sm", { style: { flex: "1" }, onclick: function () { allDirections(day); } }, ["🗺 전체 길찾기"])
@@ -229,7 +240,7 @@
 
   function drawTimeline(day, idx, target, rainy, schedule) {
     target.innerHTML = "";
-    var ctx = { dayIndex: idx, rainy: !!rainy, schedule: schedule, onEdit: function (sid) { TP.editor.openStopModal(day.id, sid); } };
+    var ctx = { dayIndex: idx, rainy: !!rainy, schedule: schedule, currency: (store.activeTrip() && store.activeTrip().currency) || "JPY", onEdit: function (sid) { TP.editor.openStopModal(day.id, sid); } };
     var tl = R.timeline(day, ctx);
     target.appendChild(tl);
     if (day.stops.length > 1) attachDragReorder(tl, day.id);
@@ -337,7 +348,7 @@
   }
 
   /* ---------- 여행 생성/예시/가져오기/내보내기/전체삭제 ---------- */
-  function newTrip() { var t = store.addTrip(); location.hash = "#/trip/" + t.id; }
+  function newTrip() { TP.editor.openTripModal(); }
   function loadSample() { var t = store.addTripData(TP.sample()); location.hash = "#/trip/" + t.id; U.toast("오사카 예시 여행을 추가했어요"); }
   function doExport() {
     var data = store.exportJSON();

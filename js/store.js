@@ -1,10 +1,12 @@
 /* store.js — 다중 여행 데이터 모델 + localStorage (네임스페이스 TP.store)
  *
  *   State { trips: [Trip], activeId }
- *   Trip  { id, title, days: [Day] }
+ *   Trip  { id, title, region, currency, days: [Day] }
  *   Day   { id, date:'YYYY-MM-DD', label, stops: [Stop] }
  *   Stop  { id, type, title, subtitle, address, lat, lon, time, durationLabel,
- *           arriveTime, departTime, stayMin,   // 공항 도착/출발 시각 + 체류시간(분)
+ *           arriveTime, departTime, stayMin,            // 공항 도착/출발 시각 + 체류시간(분)
+ *           arriveBy, fareAmount,                       // 이전→여기 이동수단 + 예상/입력 교통비
+ *           costAmount, payment,                        // 이곳 경비 + 결제수단(credit/debit/cash)
  *           indoor, openHours, closingDays:[0..6], closingNote,
  *           reservation, reservationNote, fixed, photoSpot, note, cost }
  *
@@ -19,13 +21,14 @@
   var STATE = { trips: [], activeId: null };
   var listeners = [];
 
-  function emptyTrip(partial) { return Object.assign({ id: uid(), title: "새 여행", days: [] }, partial || {}); }
+  function emptyTrip(partial) { return Object.assign({ id: uid(), title: "새 여행", region: "", currency: "JPY", days: [] }, partial || {}); }
   function defaultDay(partial) { return Object.assign({ id: uid(), date: "", label: "", stops: [] }, partial || {}); }
   function defaultStop(partial) {
     var s = Object.assign({
       id: uid(), type: "attraction", title: "", subtitle: "", address: "",
       lat: null, lon: null, time: "", durationLabel: "",
       arriveTime: "", departTime: "", stayMin: null,
+      arriveBy: "", fareAmount: null, costAmount: null, payment: "",
       indoor: null, openHours: "", closingDays: [], closingNote: "",
       reservation: "none", reservationNote: "", fixed: false, photoSpot: false,
       note: "", cost: ""
@@ -35,6 +38,11 @@
     // 체류시간(분): 0 이상 정수만, 아니면 null(타입별 기본값 사용)
     var sm = parseInt(s.stayMin, 10);
     s.stayMin = (isFinite(sm) && sm >= 0) ? sm : null;
+    // 금액(교통비/경비): 0 이상 숫자만, 아니면 null
+    var fa = parseFloat(s.fareAmount); s.fareAmount = (isFinite(fa) && fa >= 0) ? fa : null;
+    var ca = parseFloat(s.costAmount); s.costAmount = (isFinite(ca) && ca >= 0) ? ca : null;
+    if (["transit", "taxi", "walk", "none"].indexOf(s.arriveBy) < 0) s.arriveBy = "";
+    if (["credit", "debit", "cash"].indexOf(s.payment) < 0) s.payment = "";
     // 가져오기/공유 데이터 방어: closingDays는 0~6 정수 요일만
     s.closingDays = (Array.isArray(s.closingDays) ? s.closingDays : []).map(Number).filter(function (d) { return d >= 0 && d <= 6 && Math.floor(d) === d; });
     return s;
@@ -44,6 +52,9 @@
     if (!trip || typeof trip !== "object") return emptyTrip();
     if (!trip.id) trip.id = uid();
     if (!trip.title) trip.title = "새 여행";
+    if (typeof trip.region !== "string") trip.region = "";
+    var validCur = TP.money && TP.money.CUR && TP.money.CUR[trip.currency];   // money.js의 통화표 기준
+    if (!validCur) trip.currency = "JPY";
     if (!Array.isArray(trip.days)) trip.days = [];
     trip.days.forEach(function (d) {
       if (!d.id) d.id = uid();

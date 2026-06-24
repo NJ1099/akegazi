@@ -23,6 +23,9 @@
 - **실시간 날씨** — Open-Meteo (미래 16일 예보 / 과거 archive 실측), 무료·키 불필요
 - **우천 → 실내 추천** — 강수 ≥3mm 또는 확률 ≥60%면 배너 + 야외 장소 우천주의 배지
 - **지도 = 구글맵 JS API** — 다크 스타일 구글맵에 **방문 순서 번호 마커**(SVG) + 점선 동선. 위치 선택기도 구글맵 클릭/드래그(Leaflet 완전 제거).
+- **구간 교통수단·예상 교통비** — 카드의 빠른 칩으로 이전→여기 이동을 대중교통/택시/도보 선택, 거리 기반 예상요금(통화별). 직접 입력 가능. (editor도 동일)
+- **결제수단별 경비·예산** — 장소마다 금액 + 결제수단(신용/체크/현금) 입력 → 일/여행 예산 배너에 결제수단별 + 예상 교통비 합산한 총 예산 표시.
+- **여행 생성/통화** — 새 여행 시 이름·지역·통화·기간·비행기 시각 입력 → 기간의 날짜들 + 첫날 도착공항·마지막날 출발공항(고정) 자동 생성(편집 가능). 통화(¥/₩/$/€)는 지역 입력 시 자동 추천. `openTripModal`.
 - **길찾기** — 구글맵 대중교통 딥링크 (이전→여기 / 전체)
 - **일정 공유** — `↗ 공유`로 일정을 URL(`#trip=`)에 압축 담아 Web Share/클립보드 → 카톡·텔레그램. 링크 열면 ‘불러오기’ 모달.
 - **홈 이동** — 앱 제목 ‘어케가지’ 클릭 시 홈. 앱바: 공유 / 예시 / ⋯(가져오기·내보내기).
@@ -70,6 +73,12 @@
 2. **캐시 최신화(서비스 워커)** — "새로고침해도 최신화 안 됨(다른 브라우저는 됨)"은 GitHub Pages의 HTML 캐시(기본 10분) 탓. `sw.js`(**network-first**, 같은 출처 GET만, 외부 구글/날씨 통과, skipWaiting+claim) 신규 + index.html 등록. 온라인이면 새로고침=최신, 오프라인은 캐시 폴백. 캐시 무효화 필요 시 `sw.js`의 `CACHE` 버전 올림. ⚠️ 현재 구버전 캐시를 가진 사용자는 **1회 강력 새로고침/사이트 데이터 삭제**로 SW를 깔면 이후 자동 최신화.
 3. **수동 시각 뒤 ETA 역행 수정** — `buildSchedule`에서 일반 장소의 수동 입력 시각이 ETA 커서를 갱신 안 해, 수동 15:00 장소 뒤에 추가한 무시각 장소가 14:20처럼 더 이르게 표시되던 문제(스크린샷). 수동 시각이 있으면 그 시각으로 표시하고 **커서를 그 시각 이상으로 전진(Math.max)** → 뒤 ETA가 항상 단조 증가. 공항/고정 앵커가 아닌 수동 시각은 거친 이동추정發 거짓 모순경고 안 띄움. node 테스트로 고정(40/40).
 
+### 6차 (사용자 피드백 반영) — 2026-06-24
+1. **교통수단·예상 교통비** — `js/money.js` 신규(TP.money: 통화표·format·estimateFare(거리기반)·currencyForRegion). Stop에 `arriveBy`(transit/taxi/walk/none)·`fareAmount`. 카드 빠른칩 + editor 섹션. 실제 요금 API 없어 거리/통화별 추정(직접 수정 가능).
+2. **결제수단별 경비·총 예산** — Stop에 `costAmount`·`payment`(credit/debit/cash). render `dayBudget/tripBudget/budgetBanner`(결제수단별 + 예상 교통비 합산). 일/여행 뷰에 예산 배너.
+3. **여행 생성/통화** — `openTripModal`(이름·지역·통화·기간·비행기) → `generateDaysAndFlights`로 날짜들 + 도착/출발 공항(고정) 자동 생성. Trip에 `region`·`currency`. 지역→통화 자동추천. `newTrip`이 빈 여행 대신 모달 오픈. 여행 헤더에 지역·통화·편집(✎).
+4. **검증** — money/budget/share node 33/33, geo 40/40, 브라우저 스모크 13/13. + 어드버서리얼 리뷰 반영.
+
 ## 알려진 제약 / TODO
 - **구글맵 API 키 필요** — `js/config.js`에 referrer 제한 브라우저 키. 비면 검색은 OSM 폴백·지도는 안내문. 결제계정 필요하나 개인 사용은 무료 한도 내(예산 알림 권장).
 - **시간 일정은 추정** — 이동시간은 직선거리/평균속도(22km·h) 기반 추정, 실제 대중교통 경로 시간 아님. 버퍼(수속 45분/출발 2시간)는 상수. 길찾기 실경로는 구글맵 딥링크로 위임.
@@ -95,7 +104,8 @@
 | `js/config.js` | **구글맵 API 키**(referrer 제한 공개 키) |
 | `js/gmaps.js` | 구글맵 동적 로더 + `TP.gmaps.lib()` 헬퍼 |
 | `css/app.css` | 디자인 시스템(다크 타임라인) |
-| `js/store.js` | 데이터 모델 + localStorage (arriveTime/departTime/stayMin 포함) |
+| `js/store.js` | 데이터 모델 + localStorage (Trip region/currency, Stop arriveTime/departTime/stayMin/arriveBy/fareAmount/costAmount/payment) |
+| `js/money.js` | 통화·금액 포맷·예상 교통요금·지역→통화 추천 (TP.money) |
 | `js/geo.js` | 지오코딩(구글 Places) + 동선 최적화 + **buildSchedule(시간 일정)** + 구글맵 딥링크 |
 | `js/maps.js` | **구글맵 JS API** 번호 마커·점선 동선·위치 선택기 |
 | `js/weather.js` | Open-Meteo + 우천 실내 추천 |

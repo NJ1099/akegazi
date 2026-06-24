@@ -347,11 +347,22 @@
     if (typeof s.fareAmount === "number") return s.fareAmount;     // 직접 입력 우선
     var mode = s.arriveBy;
     if (mode === "walk" || mode === "none") return 0;
-    var km = (prev && TP.geo.hasCoord(prev) && TP.geo.hasCoord(s)) ? TP.geo.haversine(prev, s) / 1000 : null;
+    var estimable = prev && TP.geo.hasCoord(prev) && TP.geo.hasCoord(s);
     if (!mode) {                          // 미선택: 거리 알 때만 대중교통으로 추정(무좌표 유령요금 방지)
-      if (km == null) return 0;
+      if (!estimable) return 0;
       mode = "transit";
     }
+    // 구글 실거리(Distance Matrix)가 있으면 우선
+    var road = TP.geo.cachedRoad(prev, s, mode);
+    if (road && typeof road.km === "number") {
+      if (mode === "transit" && typeof road.fareValue === "number") {       // 구글이 준 실제 대중교통 요금
+        var fc = road.fareCurrency || currency;
+        return (fc === currency) ? road.fareValue : (TP.money.convert(road.fareValue, fc, currency) || road.fareValue);
+      }
+      return TP.money.estimateFare(road.km, mode, currency);
+    }
+    // 폴백: 직선거리 × 1.4(도로계수)
+    var km = estimable ? TP.geo.haversine(prev, s) / 1000 * 1.4 : null;
     return TP.money.estimateFare(km, mode, currency);
   }
   function emptyCat() { return { food: 0, ticket: 0, lodging: 0, shopping: 0, etc: 0 }; }

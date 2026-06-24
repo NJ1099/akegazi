@@ -77,9 +77,10 @@
       box.appendChild(el("div.modal__title", { text: existing ? "장소 편집" : "장소 추가" }));
       box.appendChild(el("div.modal__sub", { text: "가고 싶은 곳 · 먹고 싶은 곳 · 숙소 · 공항 무엇이든 추가하세요." }));
 
-      // 이름
-      var titleInput = el("input.input", { value: f.title, placeholder: "예: 도쿄타워", oninput: function () { f.title = this.value; } });
-      box.appendChild(field("장소 이름", titleInput));
+      // 이름 (입력하면 위치 자동 검색)
+      var results = el("div.geo-results");
+      var titleInput = el("input.input", { value: f.title, placeholder: "예: 도쿄타워, 이치란 라멘", autocomplete: "off", oninput: function () { f.title = this.value; } });
+      box.appendChild(field("장소 이름", el("div", null, [titleInput, results]), "이름을 적으면 위치를 자동으로 검색해요"));
 
       // 타입 칩
       var typeWrap = el("div.chips");
@@ -93,8 +94,8 @@
       box.appendChild(field("종류", typeWrap));
 
       // ----- 공항 시각 (공항 타입에서만 표시) -----
-      var arriveInput = el("input.input", { type: "time", value: f.arriveTime || "", oninput: function () { f.arriveTime = this.value; } });
-      var departInput = el("input.input", { type: "time", value: f.departTime || "", oninput: function () { f.departTime = this.value; } });
+      var arriveInput = timeInput(f.arriveTime, function (v) { f.arriveTime = v; });
+      var departInput = timeInput(f.departTime, function (v) { f.departTime = v; });
       var airportBox = field("✈️ 공항 시각", el("div.row", null, [
         wrapLabeled("도착(착륙) 시각", arriveInput),
         wrapLabeled("출발(이륙) 시각", departInput)
@@ -110,10 +111,8 @@
       box.appendChild(field("현지명 · 부제 (선택)",
         el("input.input", { value: f.subtitle, placeholder: "예: 東京タワー / Tokyo Tower", oninput: function () { f.subtitle = this.value; } })));
 
-      // ----- 위치 (지오코딩) -----
-      var searchInput = el("input.input", { value: "", placeholder: "장소/주소 검색 (예: 도쿄타워, Narita Airport)" });
+      // ----- 위치 (이름 입력 → 자동 검색 결과는 이름칸 아래 results에 표시) -----
       var pickedLabel = el("div.geo-picked", { html: "" });
-      var results = el("div.geo-results");
       function showPicked() {
         if (TP.geo.hasCoord(f)) {
           pickedLabel.textContent = "📍 좌표 설정됨 (" + f.lat.toFixed(4) + ", " + f.lon.toFixed(4) + ")" + (f.address ? " · " + f.address : "");
@@ -123,23 +122,23 @@
       showPicked();
       var searchSeq = 0;
       function doSearch() {
-        var q = searchInput.value.trim();
-        if (!q) { searchInput.focus(); return; }
+        var q = (titleInput.value || "").trim();
+        if (q.length < 2) { results.innerHTML = ""; return; }
         var mySeq = ++searchSeq;
         results.innerHTML = "";
         results.appendChild(el("div.geo-result", null, [el("span.spin"), "  검색 중…"]));
         TP.geo.geocode(q).then(function (list) {
           if (mySeq !== searchSeq) return;   // 더 최신 검색이 시작됨 → stale 결과 무시
           results.innerHTML = "";
-          if (!list.length) { results.appendChild(el("div.geo-result", { text: "결과가 없어요. 주소를 더 구체적으로 입력해보세요." })); return; }
+          if (!list.length) { results.appendChild(el("div.geo-result", { text: "결과가 없어요. 이름을 더 구체적으로 적어보세요." })); return; }
           list.forEach(function (r) {
             results.appendChild(el("button.geo-result", {
               type: "button",
               onclick: function () {
                 f.lat = r.lat; f.lon = r.lon;
-                if (!f.address) f.address = r.address;
+                f.address = r.address;
                 if (!f.title) { f.title = r.name; titleInput.value = r.name; }
-                addrInput.value = f.address;
+                if (addrInput) addrInput.value = f.address;
                 results.innerHTML = ""; showPicked();
                 if (pickMap && pickMap.setView) pickMap.setView(r.lat, r.lon);
                 U.toast("위치를 설정했어요");
@@ -151,15 +150,14 @@
           results.innerHTML = ""; results.appendChild(el("div.geo-result", { text: "검색에 실패했어요. 잠시 후 다시 시도하세요." }));
         });
       }
-      searchInput.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); doSearch(); } });
       var liveSearch = U.debounce(function () {
-        if (searchInput.value.trim().length >= 2) doSearch();
-        else { searchSeq++; results.innerHTML = ""; }   // 짧은/빈 질의: 진행 중 검색 무효화 + 이전 결과 제거
-      }, 380);
-      searchInput.addEventListener("input", liveSearch);   // 입력 즉시 구글 검색(디바운스)
-      var searchRow = el("div.row", null, [searchInput, el("button.btn.btn--ghost", { type: "button", style: { flex: "0 0 auto" }, onclick: doSearch }, ["검색"])]);
+        if ((titleInput.value || "").trim().length >= 2 && !TP.geo.hasCoord(f)) doSearch();   // 좌표 이미 있으면 자동검색 안 함(수정 방해 방지)
+        else if ((titleInput.value || "").trim().length < 2) { searchSeq++; results.innerHTML = ""; }
+      }, 420);
+      titleInput.addEventListener("input", liveSearch);                                       // 이름 입력 → 자동 검색
+      titleInput.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); doSearch(); } });
 
-      // 지도에서 선택 토글
+      // 지도에서 선택 토글 (직접 검색 버튼 포함)
       var mapBox = el("div.modal__pickmap", { style: { display: "none" } });
       var mapToggle = el("button.btn.btn--ghost.btn--sm", {
         type: "button",
@@ -175,9 +173,10 @@
           } else { mapBox.style.display = "none"; this.textContent = "지도에서 직접 선택"; }
         }
       }, ["지도에서 직접 선택"]);
+      var reSearchBtn = el("button.btn.btn--ghost.btn--sm", { type: "button", style: { marginLeft: "8px" }, onclick: function () { searchSeq++; doSearch(); } }, ["🔎 이름으로 다시 검색"]);
 
-      box.appendChild(field("위치", el("div", null, [searchRow, results, pickedLabel, el("div", { style: { marginTop: "8px" } }, [mapToggle]), mapBox]),
-        "검색해서 고르거나, 지도에서 직접 찍으세요"));
+      box.appendChild(field("위치", el("div", null, [pickedLabel, el("div", { style: { marginTop: "8px" } }, [mapToggle, reSearchBtn]), mapBox]),
+        "이름으로 자동 검색되며, 안 맞으면 지도에서 직접 찍거나 다시 검색하세요"));
 
       // 주소
       var addrInput = el("input.input", { value: f.address, placeholder: "주소 (선택)", oninput: function () { f.address = this.value; } });
@@ -191,7 +190,7 @@
       });
       box.appendChild(field("",
         el("div.row", null, [
-          wrapLabeled("도착 시간", el("input.input", { type: "time", value: f.time, oninput: function () { f.time = this.value; } })),
+          wrapLabeled("도착 시간", timeInput(f.time, function (v) { f.time = v; })),
           wrapLabeled("체류 시간(분)", stayInput)
         ]), "체류 시간은 일정 ETA 계산에 사용돼요 (비우면 종류별 기본값)"));
       box.appendChild(field("소요시간 표시 (선택)",
@@ -330,6 +329,19 @@
   function wrapLabeled(label, control) {
     return el("div", null, [el("label", { style: { display: "block", fontSize: "12px", fontWeight: "800", color: "var(--text-2)", marginBottom: "6px" }, text: label }), control]);
   }
+  // HH:MM 수동 입력(시간 휠 없이 직접 타이핑). 1300 → 13:00 자동 콜론.
+  function timeInput(val, onset) {
+    var inp = el("input.input", { value: val || "", placeholder: "예: 13:00", inputmode: "numeric", maxlength: "5", autocomplete: "off" });
+    inp.addEventListener("input", function () {
+      var v = inp.value.replace(/[^0-9:]/g, "");
+      var digits = v.replace(/:/g, "");
+      if (digits.length > 4) digits = digits.slice(0, 4);
+      if (v.indexOf(":") < 0 && digits.length >= 3) v = digits.slice(0, 2) + ":" + digits.slice(2);
+      inp.value = v;
+      onset(v);
+    });
+    return inp;
+  }
   function toggleRow(label, desc, value, onChange) {
     var input = el("input", { type: "checkbox", onchange: function () { onChange(this.checked); } });
     if (value) input.checked = true;
@@ -392,11 +404,23 @@
     if (!dates.length) return 0;
     var dayIds = [];
     dates.forEach(function (dt) { var d = store.addDay({ date: dt }); if (d) dayIds.push(d.id); });
+    var legs = [];   // 공항 좌표 비동기 지오코딩 대상
     if (f.arriveTime && dayIds.length) {
-      store.addStop(dayIds[0], { type: "airport", title: (f.region ? f.region + " 도착" : "도착 공항"), arriveTime: f.arriveTime, time: f.arriveTime, fixed: true, indoor: true });
+      var a = store.addStop(dayIds[0], { type: "airport", title: (f.region ? f.region + " 도착" : "도착 공항"), arriveTime: f.arriveTime, time: f.arriveTime, fixed: true, indoor: true });
+      if (a) legs.push({ dayId: dayIds[0], id: a.id });
     }
     if (f.departTime && dayIds.length) {
-      store.addStop(dayIds[dayIds.length - 1], { type: "airport", title: (f.region ? f.region + " 출발" : "출발 공항"), departTime: f.departTime, fixed: true, indoor: true });
+      var b = store.addStop(dayIds[dayIds.length - 1], { type: "airport", title: (f.region ? f.region + " 출발" : "출발 공항"), departTime: f.departTime, fixed: true, indoor: true });
+      if (b) legs.push({ dayId: dayIds[dayIds.length - 1], id: b.id });
+    }
+    // 공항 좌표를 구글 검색으로 채워, 교통비 거리계산이 정상 동작하도록(좌표 없으면 기본요금만 나옴)
+    if (legs.length && f.region) {
+      TP.geo.geocode(f.region + " 공항").then(function (list) {
+        var r = (list && list[0]) || null;
+        if (r && r.lat != null && r.lon != null) {
+          legs.forEach(function (lg) { store.updateStop(lg.dayId, lg.id, { lat: r.lat, lon: r.lon, address: r.address || "" }); });
+        }
+      }).catch(function () {});
     }
     return dates.length;
   }
@@ -456,8 +480,8 @@
           wrapLabeled("종료일", el("input.input", { type: "date", value: f.end, oninput: function () { f.end = this.value; } }))
         ]), "이 기간의 날짜들이 자동으로 만들어져요"));
         box.appendChild(field("✈️ 비행기 (선택)", el("div.row", null, [
-          wrapLabeled("도착 시각(첫날)", el("input.input", { type: "time", value: f.arriveTime, oninput: function () { f.arriveTime = this.value; } })),
-          wrapLabeled("출발 시각(마지막날)", el("input.input", { type: "time", value: f.departTime, oninput: function () { f.departTime = this.value; } }))
+          wrapLabeled("도착 시각(첫날)", timeInput(f.arriveTime, function (v) { f.arriveTime = v; })),
+          wrapLabeled("출발 시각(마지막날)", timeInput(f.departTime, function (v) { f.departTime = v; }))
         ]), "넣으면 첫날 도착공항·마지막날 출발공항을 고정 일정으로 자동 추가(편집 가능)"));
       }
 

@@ -334,6 +334,45 @@
     return { active: true, startMin: startMin, items: items, deadline: deadline, conflict: conflict };
   }
 
+  /* ---------- 구글 실거리(Distance Matrix) — 교통비 정확도용 ----------
+     좌표 두 점의 실제 도로/대중교통 거리·시간을 캐시. 'Distance Matrix API'가 키에
+     허용돼 있어야 동작(없으면 null → 직선거리×도로계수 폴백). 대중교통 요금이 오면 그대로 사용. */
+  var roadCache = {};      // key → {km,min,fareValue?,fareCurrency?} | null(실패) | undefined(미조회)
+  var roadFetching = {};
+  function roundC(v) { return Math.round(v * 10000) / 10000; }
+  function roadKey(a, b, mode) { return roundC(a.lat) + "," + roundC(a.lon) + ">" + roundC(b.lat) + "," + roundC(b.lon) + "|" + mode; }
+  function cachedRoad(a, b, mode) {
+    if (!hasCoord(a) || !hasCoord(b)) return null;
+    return roadCache[roadKey(a, b, mode)];     // undefined=미조회, null=실패, 객체=성공
+  }
+  function ensureRoad(a, b, mode) {
+    if (!hasCoord(a) || !hasCoord(b)) return Promise.resolve(null);
+    var k = roadKey(a, b, mode);
+    if (k in roadCache) return Promise.resolve(roadCache[k]);
+    if (roadFetching[k]) return roadFetching[k];
+    if (!TP.gmaps || !TP.gmaps.hasKey()) { roadCache[k] = null; return Promise.resolve(null); }
+    roadFetching[k] = TP.gmaps.lib("routes").then(function () {
+      return new Promise(function (resolve) {
+        var svc = new window.google.maps.DistanceMatrixService();
+        svc.getDistanceMatrix({
+          origins: [{ lat: a.lat, lng: a.lon }], destinations: [{ lat: b.lat, lng: b.lon }],
+          travelMode: (mode === "transit") ? "TRANSIT" : "DRIVING"
+        }, function (res, status) {
+          var out = null;
+          try {
+            var elr = res && res.rows && res.rows[0] && res.rows[0].elements && res.rows[0].elements[0];
+            if (status === "OK" && elr && elr.status === "OK" && elr.distance) {
+              out = { km: elr.distance.value / 1000, min: elr.duration ? Math.round(elr.duration.value / 60) : null };
+              if (elr.fare && typeof elr.fare.value === "number") { out.fareValue = elr.fare.value; out.fareCurrency = elr.fare.currency; }
+            }
+          } catch (e) {}
+          roadCache[k] = out; delete roadFetching[k]; resolve(out);
+        });
+      });
+    }).catch(function () { roadCache[k] = null; delete roadFetching[k]; return null; });
+    return roadFetching[k];
+  }
+
   /* ---------- 구글맵 딥링크 ---------- */
   function locToken(s) {
     if (hasCoord(s)) return s.lat.toFixed(6) + "," + s.lon.toFixed(6);
@@ -375,6 +414,7 @@
     normLat: normLat, normLon: normLon,
     geocode: geocode, optimizeOrder: optimizeOrder, pathLen: pathLen,
     buildSchedule: buildSchedule, minToHm: minToHm, hmToMin: hmToMin, defaultDwell: defaultDwell,
+    cachedRoad: cachedRoad, ensureRoad: ensureRoad,
     dirURL: dirURL, multiDirURL: multiDirURL, searchURL: searchURL
   };
 })(window.TP = window.TP || {});

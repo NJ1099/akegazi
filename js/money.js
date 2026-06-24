@@ -8,10 +8,10 @@
 
   // 통화별 설정 + 거친 요금 모델(현지 평균 추정치)
   var CUR = {
-    JPY: { code: "JPY", sym: "¥", name: "엔",   dec: 0, step: 10,   transit: { base: 180,  perKm: 22, min: 180,  max: 1200 }, taxi: { base: 500,  perKm: 380,  min: 500,  max: 30000 } },
-    KRW: { code: "KRW", sym: "₩", name: "원",   dec: 0, step: 100,  transit: { base: 1400, perKm: 60, min: 1400, max: 3500 }, taxi: { base: 4800, perKm: 1000, min: 4800, max: 120000 } },
-    USD: { code: "USD", sym: "$", name: "달러", dec: 2, step: 0.25, transit: { base: 2.5,  perKm: 0.25, min: 2.5, max: 6 },  taxi: { base: 3.5,  perKm: 2.2,  min: 3.5,  max: 250 } },
-    EUR: { code: "EUR", sym: "€", name: "유로", dec: 2, step: 0.1,  transit: { base: 2.5,  perKm: 0.25, min: 2.5, max: 6 },  taxi: { base: 4,    perKm: 2.2,  min: 4,     max: 250 } }
+    JPY: { code: "JPY", sym: "¥", name: "엔",   dec: 0, step: 10,   transit: { base: 180,  perKm: 22, min: 180,  max: 1200 }, taxi: { base: 500,  perKm: 250, min: 500,  max: 30000 } },
+    KRW: { code: "KRW", sym: "₩", name: "원",   dec: 0, step: 100,  transit: { base: 1400, perKm: 60, min: 1400, max: 3500 }, taxi: { base: 4800, perKm: 800,  min: 4800, max: 120000 } },
+    USD: { code: "USD", sym: "$", name: "달러", dec: 2, step: 0.25, transit: { base: 2.5,  perKm: 0.25, min: 2.5, max: 6 },  taxi: { base: 3.5,  perKm: 1.8,  min: 3.5,  max: 250 } },
+    EUR: { code: "EUR", sym: "€", name: "유로", dec: 2, step: 0.1,  transit: { base: 2.5,  perKm: 0.25, min: 2.5, max: 6 },  taxi: { base: 4,    perKm: 1.9,  min: 4,     max: 250 } }
   };
   var ORDER = ["JPY", "KRW", "USD", "EUR"];
 

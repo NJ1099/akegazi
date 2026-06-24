@@ -186,6 +186,7 @@
   /* ---------- 날짜: 장소 타임라인 ---------- */
   function renderDay(day) {
     var idx = store.dayIndex(day.id);
+    ensureRoads(day);   // 구글 실거리 비동기 로드(교통비 정확도)
     viewEl.appendChild(el("div.day-hero", null, [
       el("div.day-hero__main", null, [
         el("div.day-hero__eyebrow", { text: "DAY " + (idx + 1) }),
@@ -409,6 +410,21 @@
     if (menuBtn) menuBtn.setAttribute("aria-expanded", "false");
     document.removeEventListener("click", onDocClick, true);
     document.removeEventListener("keydown", onMenuKey);
+  }
+
+  /* ---------- 구글 실거리 로드(교통비 정확도 → 재렌더로 반영) ---------- */
+  function ensureRoads(day) {
+    if (!day || !TP.gmaps || !TP.gmaps.hasKey()) return;
+    var stops = day.stops, myEpoch = epoch, pending = [];
+    for (var i = 1; i < stops.length; i++) {
+      var s = stops[i], prev = stops[i - 1];
+      if (s.arriveBy === "walk" || s.arriveBy === "none") continue;
+      if (typeof s.fareAmount === "number") continue;          // 직접 입력이면 거리 불필요
+      if (!geo.hasCoord(prev) || !geo.hasCoord(s)) continue;
+      var mode = (s.arriveBy === "taxi") ? "taxi" : "transit";
+      if (geo.cachedRoad(prev, s, mode) === undefined) pending.push(geo.ensureRoad(prev, s, mode));
+    }
+    if (pending.length) Promise.all(pending).then(function () { if (myEpoch === epoch) render(); });
   }
 
   /* ---------- 환율 로드(필요 시 1회 → 재렌더로 실값 반영) ---------- */

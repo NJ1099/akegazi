@@ -76,6 +76,8 @@
     if (trip.region) compact.rg = trip.region;
     if (trip.currency && trip.currency !== "JPY") compact.cu = trip.currency;
     if (trip.homeCurrency) compact.hc = trip.homeCurrency;
+    var used = (TP.store && TP.store.usedCustomCats) ? TP.store.usedCustomCats(trip) : [];   // 쓰인 커스텀 분류 동봉(라벨 깨짐 방지)
+    if (used.length) compact.xc = used.map(function (c) { return [c.k, c.l]; });
     return b64urlEncode(JSON.stringify(compact));
   }
   function decode(str) {
@@ -87,6 +89,7 @@
         region: c.rg || "",
         currency: c.cu || "JPY",
         homeCurrency: c.hc || "",
+        customCats: (Array.isArray(c.xc) ? c.xc : []).map(function (a) { return { k: a && a[0], l: a && a[1] }; }),
         days: c.d.map(function (day) {
           return { date: day.dt || "", label: day.l || "", stops: (day.s || []).map(expandStop) };
         })

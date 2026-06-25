@@ -90,6 +90,13 @@
 3. **교통비 구글 실거리화** — geo.js `cachedRoad/ensureRoad`(Distance Matrix, DRIVING/TRANSIT, 대중교통 fare 오면 사용). render legFare가 실거리 우선, 없으면 직선×1.4. money 택시 perKm 현실화. `generateDaysAndFlights`가 공항 좌표를 `region+" 공항"` 구글검색으로 채움(¥500 버그 근본 원인). app `ensureRoads`로 비동기 로드 후 재렌더.
 4. **검증** — money/budget node 57/57, geo 40/40, 스모크 13+12+8/8(수동시간·이름검색·공항택시 ¥500→~¥2,230).
 
+### 9차 (사용자 피드백 반영) — 2026-06-25
+1. **시간 칸 직접 입력 강화** — `editor.timeInput`을 커서 위치 보존형으로 개선(중간 편집 시 자동 콜론이 끼어들지 않음), `blur` 시 `normalizeHM`로 `930→09:30`·`9:5→09:05`·`1300→13:00` 보정(불완전/비정상은 원본 유지로 자유 입력 존중). 도착/출발·체류·여행모달 비행기 시각 전부 적용. `geo.hmToMin`은 `HH:MM`만 받으므로 blur 보정이 ETA 파싱을 오히려 개선(회귀 없음).
+2. **시간 칸 겹침 수정** — 타임라인 시간 거터(`.tl-item__time`)가 점(`.tl-item__dot`) ring과 데스크톱/모바일 모두 ~3px 겹치고 `white-space:nowrap` 부재로 좁은 화면/큰 글꼴에서 줄바꿈→세로 겹침. **거터 재배치**(데스크톱 padding 56→60·line 47→50·time -56/42→-60/40, ≤380 padding 50→56·time -50/38→-56/36) + `white-space:nowrap`. **320~414px 전 구간 점-시간 간격 3px 일정·겹침 0·줄바꿈 0**(puppeteer 측정). `.row > *`에 `min-width:0` 추가(좁은 화면에서 date/number 입력칸 오버플로·겹침 방지).
+3. **양방향 통화 입력(여행통화 ⇄ 내통화)** — `editor.moneyDual(destCur, homeCur, …)` 신규: 경비·교통비 금액을 **두 칸(예 ¥ 엔 ⇄ ₩ 원)**으로 띄워 한쪽에 적으면 다른 통화로 실시간 환산(미입력/동일 통화면 단일 칸). **저장값은 항상 여행통화(dest) 기준** → 예산 집계·공유 스키마 불변. `ensureRate`로 실시간 환율 로드 후 재계산. 라이브 검증 ¥3000→₩28,638, 역방향 ₩30000→¥3313. 예시 트립에 `currency:JPY·homeCurrency:KRW` 추가(엔↔원 데모). `.destInput` 핸들로 교통비 예상요금 placeholder 유지.
+4. **사용자 커스텀 경비 분류** — 분류를 **전역**(store.STATE.customCats, localStorage 영속)으로 개인 추가. `store.addCustomCat/removeCustomCat/customCats/usedCustomCats` 신규. 키는 `uc_*` 접두(빌트인/충돌 방지). editor 분류 섹션에 `➕ 직접 추가`(window.prompt) + 커스텀 칩 `✕` 삭제. render `BUILTIN_CATS`/`allCats()`/`catLabel()` 동적화, `dayBudget/tripBudget.byCat`를 고정키→동적 객체로(삭제된 커스텀도 누락 없이 표시). **⚠️핵심 버그 수정**: `defaultStop`이 빌트인 분류 키만 허용해 커스텀 키를 전부 비우던 문제 → `uc_*` 허용 + `load()`에서 customCats를 트립 마이그레이션보다 먼저 로드. 공유/내보내기는 쓰인 커스텀 분류 정의를 동봉(share `xc`, exportJSON `customCats`)하고 가져오기 시 키 보존 병합(`addTripData`→`mergeCustomCats`).
+5. **검증** — Node 로직 23/23(환율 양방향·커스텀 분류 CRUD·예산 집계·공유 라운드트립·영속 복원·검증드롭), puppeteer 라이브(타임라인 겹침 0/4폭·양방향 환산·커스텀 칩 추가/선택·여행모달 행 오버플로 0·콘솔에러 0[구글맵 리퍼러 제외]). **sw.js CACHE v4→v5**.
+
 ## 알려진 제약 / TODO
 - **정확한 구글 교통비는 'Distance Matrix API' 필요** — 키에 그 API를 추가 허용해야 실거리·실제 대중교통 요금 반영. 미허용이면 직선×1.4 추정(공항 좌표는 채워지므로 기본요금 버그는 해소).
 - **환율은 일 단위 참고치** — open.er-api.com(무료) 기준, API 실패 시 하드코딩 폴백 근사. `≈` 표시로 참고용임을 명시.
@@ -117,8 +124,8 @@
 | `js/config.js` | **구글맵 API 키**(referrer 제한 공개 키) |
 | `js/gmaps.js` | 구글맵 동적 로더 + `TP.gmaps.lib()` 헬퍼 |
 | `css/app.css` | 디자인 시스템(다크 타임라인) |
-| `js/store.js` | 데이터 모델 + localStorage (Trip region/currency, Stop arriveTime/departTime/stayMin/arriveBy/fareAmount/costAmount/payment) |
-| `js/money.js` | 통화·금액 포맷·예상 교통요금·지역→통화 추천 (TP.money) |
+| `js/store.js` | 데이터 모델 + localStorage (Trip region/currency/homeCurrency, Stop …/costAmount/payment/costCategory, **전역 customCats[]**). 커스텀 분류 API + 공유 병합 |
+| `js/money.js` | 통화·금액 포맷·예상 교통요금·지역→통화 추천·**환율 환산(rate/convert/ensureRate)** (TP.money) |
 | `js/geo.js` | 지오코딩(구글 Places) + 동선 최적화 + **buildSchedule(시간 일정)** + 구글맵 딥링크 |
 | `js/maps.js` | **구글맵 JS API** 번호 마커·점선 동선·위치 선택기 |
 | `js/weather.js` | Open-Meteo + 우천 실내 추천 |

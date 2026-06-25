@@ -18,6 +18,7 @@
   TP.sample = function () {
     return {
       title: "오사카 3일 여행",
+      region: "오사카", currency: "JPY", homeCurrency: "KRW",   // 엔 입력 ⇄ 원화 환산 데모
       days: [
         {
           date: iso(10), label: "도착 · 난바 · 도톤보리",

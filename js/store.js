@@ -18,8 +18,22 @@
   var KEY = "akegazi.trips.v1";
   var OLD_KEY = "akegazi.trip.v1";     // 구버전(단일 여행) 마이그레이션용
 
-  var STATE = { trips: [], activeId: null };
+  var STATE = { trips: [], activeId: null, customCats: [] };
   var listeners = [];
+
+  /* ---- 사용자 커스텀 경비 분류(전역) ---- */
+  var BUILTIN_CAT_KEYS = { food: 1, ticket: 1, lodging: 1, shopping: 1, etc: 1 };
+  function validateCustomCats(arr) {
+    var out = [], seen = {};
+    (Array.isArray(arr) ? arr : []).forEach(function (c) {
+      if (!c) return;
+      var k = String(c.k || "").trim();
+      var l = String(c.l || "").trim().slice(0, 24);
+      if (!k || !l || seen[k] || BUILTIN_CAT_KEYS[k]) return;   // 빈값·중복·빌트인키 충돌 방지
+      seen[k] = 1; out.push({ k: k, l: l });
+    });
+    return out.slice(0, 40);   // 과도한 개수 방어
+  }
 
   function emptyTrip(partial) { return Object.assign({ id: uid(), title: "새 여행", region: "", currency: "JPY", homeCurrency: "", days: [] }, partial || {}); }
   function defaultDay(partial) { return Object.assign({ id: uid(), date: "", label: "", stops: [] }, partial || {}); }
@@ -43,7 +57,8 @@
     var ca = parseFloat(s.costAmount); s.costAmount = (isFinite(ca) && ca >= 0) ? ca : null;
     if (["transit", "taxi", "walk", "none"].indexOf(s.arriveBy) < 0) s.arriveBy = "";
     if (["credit", "debit", "cash"].indexOf(s.payment) < 0) s.payment = "";
-    if (["food", "ticket", "lodging", "shopping", "etc"].indexOf(s.costCategory) < 0) s.costCategory = "";
+    // 분류: 빌트인 키 또는 커스텀 키(uc_*)만 허용(그 외/잘못된 값은 비움). 커스텀 정의 미로드여도 키는 보존.
+    if (s.costCategory && !BUILTIN_CAT_KEYS[s.costCategory] && !/^uc_/.test(String(s.costCategory))) s.costCategory = "";
     // 가져오기/공유 데이터 방어: closingDays는 0~6 정수 요일만
     s.closingDays = (Array.isArray(s.closingDays) ? s.closingDays : []).map(Number).filter(function (d) { return d >= 0 && d <= 6 && Math.floor(d) === d; });
     return s;
@@ -73,6 +88,7 @@
       var raw = localStorage.getItem(KEY);
       if (raw) {
         var s = JSON.parse(raw);
+        STATE.customCats = validateCustomCats(s.customCats);   // 트립 마이그레이션(defaultStop)보다 먼저 로드
         STATE.trips = (s.trips || []).map(migrateTrip);
         var aid = s.activeId;   // 저장된 activeId가 실제 존재하는 여행을 가리킬 때만 채택(stale 자가치유)
         STATE.activeId = (aid && STATE.trips.some(function (t) { return t.id === aid; })) ? aid : ((STATE.trips[0] && STATE.trips[0].id) || null);
@@ -89,7 +105,7 @@
     } catch (e) {}
     STATE.trips = []; STATE.activeId = null;
   }
-  function persist() { try { localStorage.setItem(KEY, JSON.stringify({ trips: STATE.trips, activeId: STATE.activeId })); } catch (e) {} }
+  function persist() { try { localStorage.setItem(KEY, JSON.stringify({ trips: STATE.trips, activeId: STATE.activeId, customCats: STATE.customCats })); } catch (e) {} }
   var save = TP.util.debounce(persist, 250);
 
   function subscribe(fn) { listeners.push(fn); }
@@ -107,8 +123,10 @@
 
   function addTrip(partial) { var t = emptyTrip(partial); STATE.trips.push(t); STATE.activeId = t.id; notify(); return t; }
   function addTripData(data) {
+    if (data && data.customCats) mergeCustomCats(data.customCats);   // 공유/가져오기 분류 병합(키 보존)
     var t = migrateTrip(Object.assign({ id: uid() }, data || {}));
     t.id = uid();                          // 공유/가져오기는 항상 새 id로 추가(중복 방지)
+    delete t.customCats;                   // 분류는 전역으로 옮겼으므로 트립에는 남기지 않음
     STATE.trips.push(t); STATE.activeId = t.id; notify(); return t;
   }
   function updateTrip(id, patch) { var t = trip(id); if (!t) return; Object.assign(t, patch); notify(); }
@@ -118,6 +136,37 @@
     notify();
   }
   function reset() { STATE.trips = []; STATE.activeId = null; notify(); }
+
+  /* ---- 커스텀 분류 API ---- */
+  function customCats() { return STATE.customCats.slice(); }
+  function addCustomCat(label) {
+    var l = String(label || "").trim().slice(0, 24);
+    if (!l) return null;
+    var exist = STATE.customCats.filter(function (c) { return c.l.toLowerCase() === l.toLowerCase(); })[0];
+    if (exist) return exist;                                   // 같은 이름이면 재사용
+    if (STATE.customCats.length >= 40) return null;            // 상한
+    var c = { k: "uc_" + uid(), l: l };
+    STATE.customCats.push(c); notify(); return c;
+  }
+  function removeCustomCat(k) {
+    var before = STATE.customCats.length;
+    STATE.customCats = STATE.customCats.filter(function (c) { return c.k !== k; });
+    if (STATE.customCats.length !== before) notify();
+  }
+  // 외부(공유/가져오기) 분류 병합 — 키 보존(장소의 costCategory 참조가 깨지지 않게)
+  function mergeCustomCats(arr) {
+    var have = {}; STATE.customCats.forEach(function (c) { have[c.k] = 1; });
+    var added = 0;
+    validateCustomCats(arr).forEach(function (c) { if (!have[c.k]) { STATE.customCats.push(c); have[c.k] = 1; added++; } });
+    return added;
+  }
+  // 트립에서 실제 쓰인 커스텀 분류 정의만 추림(공유/내보내기 동봉용)
+  function usedCustomCats(trip) {
+    if (!trip) return [];
+    var used = {};
+    (trip.days || []).forEach(function (d) { (d.stops || []).forEach(function (s) { if (s.costCategory && !BUILTIN_CAT_KEYS[s.costCategory]) used[s.costCategory] = 1; }); });
+    return STATE.customCats.filter(function (c) { return used[c.k]; });
+  }
 
   /* ---- 활성 여행 스코프: 날짜/장소 ---- */
   function _t() { return activeTrip(); }
@@ -160,13 +209,19 @@
   }
 
   /* ---- 가져오기/내보내기 (활성 여행) ---- */
-  function exportJSON() { var t = _t(); return JSON.stringify(t || emptyTrip(), null, 2); }
+  function exportJSON() {
+    var t = _t(); if (!t) return JSON.stringify(emptyTrip(), null, 2);
+    var used = usedCustomCats(t);
+    var out = used.length ? Object.assign({}, t, { customCats: used }) : t;   // 쓰인 커스텀 분류 동봉
+    return JSON.stringify(out, null, 2);
+  }
   function importJSON(text) { addTripData(JSON.parse(text)); }   // 새 여행으로 추가
 
   TP.store = {
     load: load, subscribe: subscribe,
     trips: trips, trip: trip, activeId: activeId, activeTrip: activeTrip, setActive: setActive,
     addTrip: addTrip, addTripData: addTripData, updateTrip: updateTrip, removeTrip: removeTrip, reset: reset,
+    customCats: customCats, addCustomCat: addCustomCat, removeCustomCat: removeCustomCat, usedCustomCats: usedCustomCats,
     setTitle: setTitle, day: day, dayAt: dayAt, dayIndex: dayIndex, stop: stop,
     addDay: addDay, updateDay: updateDay, removeDay: removeDay,
     addStop: addStop, updateStop: updateStop, removeStop: removeStop,

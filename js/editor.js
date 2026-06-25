@@ -66,6 +66,7 @@
     var pickMap = null;
     var trip = store.activeTrip();
     var cur = (trip && trip.currency) || "JPY";
+    var homeCur = (trip && trip.homeCurrency) || "";    // 내 통화(양방향 입력·환산용)
     var dayObj = store.day(dayId);
     var prevStop = null;                                         // 교통비 추정용: 직전 장소
     if (dayObj) {
@@ -199,10 +200,8 @@
       // ----- 이동수단 (이전 → 여기): 첫 장소가 아니면 -----
       if (prevStop) {
         var MODES = [["transit", "🚌 대중교통"], ["taxi", "🚕 택시"], ["walk", "🚶 도보"], ["none", "안 함"]];
-        var fareInput = el("input.input", {
-          type: "number", min: "0", value: (f.fareAmount != null ? f.fareAmount : ""),
-          oninput: function () { var v = parseFloat(this.value); f.fareAmount = (isFinite(v) && v >= 0) ? v : null; }
-        });
+        var fareCtl = moneyDual(cur, homeCur, f.fareAmount, function (v) { f.fareAmount = v; });   // 양방향 통화 입력
+        var fareInput = fareCtl.destInput;                       // 예상요금 placeholder 갱신용
         var modeWrap = el("div.chips");
         function legKm() { return (TP.geo.hasCoord(prevStop) && TP.geo.hasCoord(f)) ? TP.geo.haversine(prevStop, f) / 1000 : null; }
         function updFare() {
@@ -219,15 +218,15 @@
         });
         updFare();
         box.appendChild(field("이전 장소 → 여기 이동수단",
-          el("div", null, [modeWrap, el("div", { style: { marginTop: "8px" } }, [wrapLabeled("교통비 (" + TP.money.symbol(cur) + ", 비우면 예상값)", fareInput)])]),
-          "거리 기반 예상요금이며, 직접 입력하면 그 값으로 합산돼요"));
+          el("div", null, [modeWrap, el("div", { style: { marginTop: "8px" } }, [
+            el("label", { style: { display: "block", fontSize: "12px", fontWeight: "800", color: "var(--text-2)", marginBottom: "6px" }, text: "교통비 (비우면 예상값)" }),
+            fareCtl
+          ])]),
+          (homeCur && homeCur !== cur) ? "한쪽에 적으면 다른 통화로 자동 환산돼요. 직접 입력하면 그 값으로 합산돼요" : "거리 기반 예상요금이며, 직접 입력하면 그 값으로 합산돼요"));
       }
 
-      // ----- 경비 (결제수단 + 금액) -----
-      var costInput = el("input.input", {
-        type: "number", min: "0", value: (f.costAmount != null ? f.costAmount : ""), placeholder: "예: 3000",
-        oninput: function () { var v = parseFloat(this.value); f.costAmount = (isFinite(v) && v >= 0) ? v : null; }
-      });
+      // ----- 경비 (금액 양방향 + 분류 + 결제수단) -----
+      var costCtl = moneyDual(cur, homeCur, f.costAmount, function (v) { f.costAmount = v; });   // 양방향 통화 입력
       var payWrap = el("div.chips");
       [["credit", "💳 신용카드"], ["debit", "💳 체크카드"], ["cash", "💵 현금"], ["", "없음"]].forEach(function (po) {
         payWrap.appendChild(el("button.chip" + ((f.payment || "") === po[0] ? ".is-on" : ""), {
@@ -235,17 +234,46 @@
           onclick: function () { f.payment = po[0]; U.$$(".chip", payWrap).forEach(function (x) { x.classList.remove("is-on"); }); this.classList.add("is-on"); }
         }, [po[1]]));
       });
+      // 분류 칩(빌트인 + 사용자 커스텀) — '직접 추가'로 개인 분류 등록, 커스텀은 ✕로 삭제
       var catWrap = el("div.chips");
       var defCat = TP.render.inferCategory(f);
-      TP.render.COST_CATS.forEach(function (c) {
-        catWrap.appendChild(el("button.chip" + (((f.costCategory || defCat) === c[0]) ? ".is-on" : ""), {
+      function renderCatChips() {
+        catWrap.innerHTML = "";
+        TP.render.allCats().forEach(function (c) {
+          var isCustom = TP.render.BUILTIN_CATS.every(function (b) { return b[0] !== c[0]; });
+          var on = ((f.costCategory || defCat) === c[0]);
+          var chip = el("button.chip" + (on ? ".is-on" : "") + (isCustom ? ".chip--custom" : ""), {
+            type: "button",
+            onclick: function () { f.costCategory = c[0]; renderCatChips(); }
+          }, [c[1]]);
+          if (isCustom) {
+            chip.appendChild(el("span.chip__x", {
+              role: "button", "aria-label": c[1] + " 분류 삭제", title: "이 분류 삭제",
+              onclick: function (e) {
+                e.stopPropagation(); e.preventDefault();
+                if (!window.confirm("‘" + c[1] + "’ 분류를 삭제할까요? (이미 이 분류로 적은 경비는 ‘기타’로 표시돼요)")) return;
+                if (f.costCategory === c[0]) f.costCategory = "";
+                store.removeCustomCat(c[0]); renderCatChips();
+              }
+            }, ["✕"]));
+          }
+          catWrap.appendChild(chip);
+        });
+        catWrap.appendChild(el("button.chip.chip--add", {
           type: "button",
-          onclick: function () { f.costCategory = c[0]; U.$$(".chip", catWrap).forEach(function (x) { x.classList.remove("is-on"); }); this.classList.add("is-on"); }
-        }, [c[1]]));
-      });
+          onclick: function () {
+            var name = (window.prompt("새 분류 이름을 입력하세요 (이모지 포함 가능, 예: 🚕 교통, 🎁 기념품)") || "").trim();
+            if (!name) return;
+            var c = store.addCustomCat(name);
+            if (c) f.costCategory = c.k;
+            renderCatChips();
+          }
+        }, ["➕ 직접 추가"]));
+      }
+      renderCatChips();
       box.appendChild(field("💳 경비 (선택)",
         el("div", null, [
-          wrapLabeled("금액 (" + TP.money.symbol(cur) + ")", costInput),
+          costCtl,
           el("div", { style: { marginTop: "8px" } }, [wrapLabeled("분류", catWrap)]),
           el("div", { style: { marginTop: "8px" } }, [wrapLabeled("결제수단", payWrap)])
         ]),
@@ -329,18 +357,72 @@
   function wrapLabeled(label, control) {
     return el("div", null, [el("label", { style: { display: "block", fontSize: "12px", fontWeight: "800", color: "var(--text-2)", marginBottom: "6px" }, text: label }), control]);
   }
-  // HH:MM 수동 입력(시간 휠 없이 직접 타이핑). 1300 → 13:00 자동 콜론.
+  // HH:MM 수동 입력(시간 휠 없이 직접 타이핑). 1300 → 13:00 자동 콜론. 커서 위치 보존 + blur 시 보정.
   function timeInput(val, onset) {
-    var inp = el("input.input", { value: val || "", placeholder: "예: 13:00", inputmode: "numeric", maxlength: "5", autocomplete: "off" });
+    var inp = el("input.input.input--time", { value: val || "", placeholder: "예: 13:00", inputmode: "numeric", maxlength: "5", autocomplete: "off", "aria-label": "시각 (HH:MM)" });
     inp.addEventListener("input", function () {
-      var v = inp.value.replace(/[^0-9:]/g, "");
+      var raw = inp.value, caret = inp.selectionStart, atEnd = (caret === raw.length);
+      var v = raw.replace(/[^0-9:]/g, "");
       var digits = v.replace(/:/g, "");
       if (digits.length > 4) digits = digits.slice(0, 4);
-      if (v.indexOf(":") < 0 && digits.length >= 3) v = digits.slice(0, 2) + ":" + digits.slice(2);
-      inp.value = v;
-      onset(v);
+      // 끝에서 타이핑 중 + 콜론 없음 + 3자리↑ → 자동 콜론(중간을 고치는 중엔 건드리지 않아 자유 편집 가능)
+      if (atEnd && v.indexOf(":") < 0 && digits.length >= 3) v = digits.slice(0, 2) + ":" + digits.slice(2);
+      if (v !== raw) {
+        inp.value = v;
+        if (!atEnd) { var np = Math.min(caret, v.length); try { inp.setSelectionRange(np, np); } catch (e) {} }
+      }
+      onset(inp.value);
+    });
+    inp.addEventListener("blur", function () {                 // 입력을 마치면 가능한 범위에서 HH:MM 로 정리
+      var n = normalizeHM(inp.value);
+      if (n !== inp.value) { inp.value = n; onset(n); }
     });
     return inp;
+  }
+  // "9","930","9:5" → "09:30"/"09:05" 보정. 불완전/비정상이면 원본 유지(사용자 자유 입력 존중).
+  function normalizeHM(s) {
+    s = String(s || "").trim();
+    if (!s) return "";
+    var h, mi, m = /^(\d{1,2}):(\d{1,2})$/.exec(s);
+    if (m) { h = m[1]; mi = m[2]; }
+    else { var d = s.replace(/\D/g, ""); if (d.length === 3) { h = d.slice(0, 1); mi = d.slice(1); } else if (d.length === 4) { h = d.slice(0, 2); mi = d.slice(2); } else return s; }
+    var hn = parseInt(h, 10), mn = parseInt(mi, 10);
+    if (!isFinite(hn) || !isFinite(mn) || hn > 23 || mn > 59) return s;
+    return (hn < 10 ? "0" + hn : "" + hn) + ":" + (mn < 10 ? "0" + mn : "" + mn);
+  }
+
+  // 숫자 통화 자리수 반올림(표시용)
+  function fmtNum(v, cur) {
+    if (v == null || !isFinite(v)) return "";
+    var dec = TP.money.cfg(cur).dec;
+    return dec ? Number(v.toFixed(dec)) : Math.round(v);
+  }
+  // 양방향 통화 입력: dest(여행통화) ↔ home(내통화). 저장값은 항상 dest(여행통화) 기준 → 예산/공유 호환.
+  // 반환 노드에 .destInput(여행통화 input)을 달아 placeholder 등 후처리 가능하게 한다.
+  function moneyDual(destCur, homeCur, initialDest, onset) {
+    var dInput = el("input.input", { type: "number", min: "0", step: "any", inputmode: "decimal", value: (initialDest != null ? initialDest : ""), placeholder: "예: 3000" });
+    function emit() { var v = parseFloat(dInput.value); onset((isFinite(v) && v >= 0) ? v : null); }
+    if (!homeCur || homeCur === destCur) {                      // 내통화 미설정/동일 → 단일 입력
+      dInput.addEventListener("input", emit);
+      var single = wrapLabeled(TP.money.cfg(destCur).sym + " " + TP.money.cfg(destCur).name, dInput);
+      single.destInput = dInput;
+      return single;
+    }
+    var hInput = el("input.input", { type: "number", min: "0", step: "any", inputmode: "decimal", placeholder: "예: 30000" });
+    var lock = false;
+    function fromD() { if (lock) return; lock = true; var v = parseFloat(dInput.value); hInput.value = isFinite(v) ? fmtNum(TP.money.convert(v, destCur, homeCur), homeCur) : ""; lock = false; }
+    function fromH() { if (lock) return; lock = true; var v = parseFloat(hInput.value); dInput.value = isFinite(v) ? fmtNum(TP.money.convert(v, homeCur, destCur), destCur) : ""; lock = false; }
+    dInput.addEventListener("input", function () { fromD(); emit(); });
+    hInput.addEventListener("input", function () { fromH(); emit(); });   // 내통화로 적으면 여행통화(저장값)로 환산
+    TP.money.ensureRate(destCur, homeCur).then(function () { if (document.body.contains(dInput)) fromD(); });   // 실시간 환율 반영
+    fromD();
+    var node = el("div.money-dual", null, [
+      wrapLabeled(TP.money.cfg(destCur).sym + " " + TP.money.cfg(destCur).name + " · 저장 기준", dInput),
+      el("div.money-dual__eq", { text: "⇄" }),
+      wrapLabeled(TP.money.cfg(homeCur).sym + " " + TP.money.cfg(homeCur).name, hInput)
+    ]);
+    node.destInput = dInput;
+    return node;
   }
   function toggleRow(label, desc, value, onChange) {
     var input = el("input", { type: "checkbox", onchange: function () { onChange(this.checked); } });

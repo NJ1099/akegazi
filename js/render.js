@@ -327,9 +327,11 @@
     return null;
   }
 
-  /* ---- 경비 카테고리 ---- */
-  var COST_CATS = [["food", "🍴 식비"], ["ticket", "🎟 입장료"], ["lodging", "🏨 숙소"], ["shopping", "🛍 쇼핑"], ["etc", "🧾 기타"]];
-  var CAT_LABEL = {}; COST_CATS.forEach(function (c) { CAT_LABEL[c[0]] = c[1]; });
+  /* ---- 경비 카테고리 (빌트인 + 사용자 커스텀) ---- */
+  var BUILTIN_CATS = [["food", "🍴 식비"], ["ticket", "🎟 입장료"], ["lodging", "🏨 숙소"], ["shopping", "🛍 쇼핑"], ["etc", "🧾 기타"]];
+  var BUILTIN_LABEL = {}; BUILTIN_CATS.forEach(function (c) { BUILTIN_LABEL[c[0]] = c[1]; });
+  function customCats() { return (TP.store && TP.store.customCats) ? TP.store.customCats() : []; }
+  function allCats() { return BUILTIN_CATS.concat(customCats().map(function (c) { return [c.k, c.l]; })); }   // [key,label][]
   function inferCategory(stop) {                          // 미지정 시 종류로 추정
     if (stop.costCategory) return stop.costCategory;
     switch (stop.type) {
@@ -339,7 +341,12 @@
       default: return "etc";
     }
   }
-  function catLabel(cat) { return CAT_LABEL[cat] || "🧾 기타"; }
+  function catLabel(cat) {
+    if (BUILTIN_LABEL[cat]) return BUILTIN_LABEL[cat];
+    var cc = customCats();
+    for (var i = 0; i < cc.length; i++) if (cc[i].k === cat) return cc[i].l;
+    return "🧾 기타";
+  }
 
   /* ---- 예산(경비 + 예상 교통비) ---- */
   function legFare(prev, s, currency) {
@@ -365,15 +372,14 @@
     var km = estimable ? TP.geo.haversine(prev, s) / 1000 * 1.4 : null;
     return TP.money.estimateFare(km, mode, currency);
   }
-  function emptyCat() { return { food: 0, ticket: 0, lodging: 0, shopping: 0, etc: 0 }; }
   function dayBudget(day, currency) {
-    var byPay = { credit: 0, debit: 0, cash: 0, other: 0 }, byCat = emptyCat(), dest = 0, transport = 0;
+    var byPay = { credit: 0, debit: 0, cash: 0, other: 0 }, byCat = {}, dest = 0, transport = 0;
     (day.stops || []).forEach(function (s, i) {
       if (typeof s.costAmount === "number" && s.costAmount > 0) {
         dest += s.costAmount;
         var pm = (s.payment === "credit" || s.payment === "debit" || s.payment === "cash") ? s.payment : "other";
         byPay[pm] += s.costAmount;
-        byCat[inferCategory(s)] += s.costAmount;
+        var cat = inferCategory(s); byCat[cat] = (byCat[cat] || 0) + s.costAmount;
       }
       if (i > 0) transport += legFare(day.stops[i - 1], s, currency);
     });
@@ -381,21 +387,22 @@
   }
   function tripBudget(trip) {
     var cur = (trip && trip.currency) || "JPY";
-    var agg = { dest: 0, transport: 0, total: 0, byPay: { credit: 0, debit: 0, cash: 0, other: 0 }, byCat: emptyCat() };
+    var agg = { dest: 0, transport: 0, total: 0, byPay: { credit: 0, debit: 0, cash: 0, other: 0 }, byCat: {} };
     (trip && trip.days || []).forEach(function (d) {
       var b = dayBudget(d, cur);
       agg.dest += b.dest; agg.transport += b.transport; agg.total += b.total;
       ["credit", "debit", "cash", "other"].forEach(function (k) { agg.byPay[k] += b.byPay[k]; });
-      ["food", "ticket", "lodging", "shopping", "etc"].forEach(function (k) { agg.byCat[k] += b.byCat[k]; });
+      Object.keys(b.byCat).forEach(function (k) { agg.byCat[k] = (agg.byCat[k] || 0) + b.byCat[k]; });
     });
     return agg;
   }
   function budgetBanner(b, currency, label, homeCur) {
     if (!b || b.total <= 0) return null;
     var M = TP.money;
-    // 카테고리별 칩 + 예상 교통비
-    var catParts = [];
-    COST_CATS.forEach(function (c) { if (b.byCat[c[0]] > 0) catParts.push(el("span.bg-chip", { text: c[1] + " " + M.format(b.byCat[c[0]], currency) })); });
+    // 카테고리별 칩 + 예상 교통비 (빌트인 + 커스텀, 합계 표시)
+    var catParts = [], seen = {};
+    allCats().forEach(function (c) { if (b.byCat[c[0]] > 0) { catParts.push(el("span.bg-chip", { text: c[1] + " " + M.format(b.byCat[c[0]], currency) })); seen[c[0]] = 1; } });
+    Object.keys(b.byCat).forEach(function (k) { if (!seen[k] && b.byCat[k] > 0) catParts.push(el("span.bg-chip", { text: catLabel(k) + " " + M.format(b.byCat[k], currency) })); });   // 삭제된 커스텀 분류도 누락 없이
     if (b.transport > 0) catParts.push(el("span.bg-chip", { text: "🚌 교통(예상) " + M.format(b.transport, currency) }));
     // 결제수단 줄
     var pay = [];
@@ -420,7 +427,8 @@
     timeline: timeline, stopCard: stopCard, badgesFor: badgesFor,
     weatherBanner: weatherBanner, rainBanner: rainBanner, scheduleBanner: scheduleBanner,
     dayBudget: dayBudget, tripBudget: tripBudget, budgetBanner: budgetBanner,
-    COST_CATS: COST_CATS, inferCategory: inferCategory, catLabel: catLabel,
+    COST_CATS: BUILTIN_CATS, BUILTIN_CATS: BUILTIN_CATS, allCats: allCats,
+    inferCategory: inferCategory, catLabel: catLabel,
     typeIcon: typeIcon, TYPE_ICON: TYPE_ICON, TYPE_LABEL: TYPE_LABEL,
     closingInfo: closingInfo
   };

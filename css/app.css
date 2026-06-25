@@ -365,16 +365,16 @@ a { color: inherit; }
 .segmented button.is-active { background: var(--surface-hi); color: var(--text); box-shadow: 0 2px 8px rgba(0,0,0,.3); }
 
 /* ===== 타임라인 ===== */
-.timeline { position: relative; padding-left: 56px; }
+.timeline { position: relative; padding-left: 60px; }
 .timeline::before {
   content: ""; position: absolute;
-  left: 47px; top: 6px; bottom: 6px; width: 2px;
+  left: 50px; top: 6px; bottom: 6px; width: 2px;
   background: linear-gradient(180deg, var(--line-strong), var(--line) 60%, transparent);
 }
 .tl-item { position: relative; margin-bottom: 14px; }
 .tl-item__time {
-  position: absolute; left: -56px; top: 4px; width: 42px;
-  text-align: right; color: var(--text-3); font-size: 11.5px; font-weight: 800; letter-spacing: -.02em;
+  position: absolute; left: -60px; top: 4px; width: 40px;
+  text-align: right; white-space: nowrap; color: var(--text-3); font-size: 11.5px; font-weight: 800; letter-spacing: -.02em;
 }
 .tl-item__time--est { color: var(--brand); }   /* 추정 ETA(자동 계산) */
 .tl-item__dot {
@@ -558,7 +558,12 @@ iframe.day-map { border: 0; display: block; }
 .input:focus, .select:focus, .textarea:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
 .textarea { resize: vertical; min-height: 64px; line-height: 1.5; }
 .row { display: flex; gap: 10px; }
-.row > * { flex: 1; }
+.row > * { flex: 1; min-width: 0; }   /* min-width:0 → 좁은 화면에서 입력칸이 넘쳐 겹치지 않게 */
+
+/* 양방향 통화 입력(여행통화 ⇄ 내통화) */
+.money-dual { display: flex; align-items: flex-end; gap: 8px; }
+.money-dual > div { flex: 1; min-width: 0; }
+.money-dual__eq { flex: 0 0 auto; padding-bottom: 11px; color: var(--text-3); font-weight: 800; font-size: 14px; }
 
 /* 타입 선택 칩 */
 .chips { display: flex; flex-wrap: wrap; gap: 7px; }
@@ -569,6 +574,17 @@ iframe.day-map { border: 0; display: block; }
   display: inline-flex; align-items: center; gap: 5px;
 }
 .chip.is-on { background: var(--brand-soft); color: var(--text); border-color: var(--brand); }
+/* 사용자 커스텀 분류 칩 + 삭제(✕) + 추가 칩 */
+.chip--custom { padding-right: 7px; }
+.chip__x {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 17px; height: 17px; margin-left: 3px; border-radius: 999px;
+  font-size: 10px; font-weight: 800; line-height: 1;
+  color: var(--text-3); background: var(--surface-hi); cursor: pointer;
+}
+.chip__x:hover { color: var(--c-red); background: var(--c-red-bg); }
+.chip--add { border-style: dashed; color: var(--brand); }
+.chip--add:hover { border-color: var(--brand); background: var(--brand-soft); }
 
 /* 토글 줄 */
 .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 0; border-top: 1px solid var(--line); }
@@ -643,9 +659,9 @@ iframe.day-map { border: 0; display: block; }
 
 @media (max-width: 380px) {
   .view { padding: 14px 12px 120px; }
-  .timeline { padding-left: 50px; }
-  .timeline::before { left: 41px; }
-  .tl-item__time { left: -50px; width: 38px; }
+  .timeline { padding-left: 56px; }
+  .timeline::before { left: 46px; }
+  .tl-item__time { left: -56px; width: 36px; }
 }
 
 /* 터치 타깃 최소 크기 (모바일 인체공학) */

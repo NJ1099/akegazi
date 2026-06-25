@@ -672,6 +672,8 @@ iframe.day-map { border: 0; display: block; }
   .appbar__back { width: 44px; height: 44px; }
   .stop__drag, .stop__del, .card-del, .day-hero__edit { min-width: 44px; min-height: 44px; }
   .leg__chip { width: 40px; height: 40px; }
+  /* iOS Safari는 글꼴 16px 미만 입력에 포커스 시 자동 확대(줌)한다 → 입력칸을 16px로 올려 줌 차단 */
+  .input, .select, .textarea { font-size: 16px; }
 }
 
 /* 접근성: 포커스 가시화 */

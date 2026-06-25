@@ -140,9 +140,11 @@
                 f.address = r.address;
                 if (!f.title) { f.title = r.name; titleInput.value = r.name; }
                 if (addrInput) addrInput.value = f.address;
+                var filledHours = false;
+                if (r.hours && !((f.openHours || "").trim())) { f.openHours = r.hours; if (openHoursInput) openHoursInput.value = r.hours; filledHours = true; }   // 구글 영업시간 자동 채움(비어 있을 때만)
                 results.innerHTML = ""; showPicked();
                 if (pickMap && pickMap.setView) pickMap.setView(r.lat, r.lon);
-                U.toast("위치를 설정했어요");
+                U.toast(filledHours ? "위치·영업시간을 설정했어요" : "위치를 설정했어요");
               }
             }, [el("div.name", { text: r.name }), el("div.addr", { text: r.address })]));
           });
@@ -279,9 +281,9 @@
         ]),
         "분류·결제수단별 + 환산까지 예산에 반영돼요"));
 
-      // 영업시간
-      box.appendChild(field("영업시간 (선택)",
-        el("input.input", { value: f.openHours, placeholder: "예: 11:00~23:00 (L.O.22:00)", oninput: function () { f.openHours = this.value; } })));
+      // 영업시간 (이름으로 검색해 선택하면 구글 영업시간 자동 채움)
+      var openHoursInput = el("input.input", { value: f.openHours, placeholder: "예: 11:00~23:00 (L.O.22:00)", oninput: function () { f.openHours = this.value; } });
+      box.appendChild(field("영업시간 (선택)", openHoursInput, "이름으로 검색해 선택하면 구글 영업시간이 자동으로 채워져요 (직접 수정 가능)"));
 
       // 휴무 요일
       var wdWrap = el("div.chips");

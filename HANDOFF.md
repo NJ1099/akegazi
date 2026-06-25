@@ -2,7 +2,12 @@
 
 > 다음 세션에서 이어서 작업할 때 가장 먼저 읽어야 하는 문서. 앱 표시명은 **어케가지**, repo/폴더는 `akegazi`.
 
-최종 업데이트: 2026-06-23
+최종 업데이트: 2026-06-25
+
+## ⚙️ 작업 워크플로 규칙 (사용자 지시 · 항상 준수)
+- **유의미한 수정을 하면 곧바로 커밋·푸시한다** — 검증(테스트/스모크)이 끝나는 즉시 한국어 커밋 메시지로 커밋 후 `git push origin main`. 사용자가 매번 따로 "커밋해줘"라고 말하지 않아도 진행한다.
+- JS/CSS를 바꿨으면 **`sw.js`의 `CACHE` 버전을 올린다**(배포 사용자 최신화). 이 HANDOFF도 함께 갱신해 같은 커밋에 포함한다.
+- repo는 `NJ1099/akegazi`(branch `main`)만 사용. `.env`/타 프로젝트/zip 등은 절대 add 금지.
 
 ## 현재 상태 한 줄 요약
 날짜별 목적지 입력 → **구글 지도 검색**·동선 최적화 · **구글맵 번호 동선** · **공항 시각 기반 시간 일정(ETA·비행기 마감 경고)** · 실시간 날씨 · 우천 시 실내 추천 · 휴무/예약 체크 · 일정 링크 공유까지 되는 **정적 SPA**. 구글맵은 **referrer 제한 브라우저 키**(`js/config.js`) 1개로 동작. **GitHub Pages 배포** → https://nj1099.github.io/akegazi/ (repo: NJ1099/akegazi).
@@ -96,6 +101,11 @@
 3. **양방향 통화 입력(여행통화 ⇄ 내통화)** — `editor.moneyDual(destCur, homeCur, …)` 신규: 경비·교통비 금액을 **두 칸(예 ¥ 엔 ⇄ ₩ 원)**으로 띄워 한쪽에 적으면 다른 통화로 실시간 환산(미입력/동일 통화면 단일 칸). **저장값은 항상 여행통화(dest) 기준** → 예산 집계·공유 스키마 불변. `ensureRate`로 실시간 환율 로드 후 재계산. 라이브 검증 ¥3000→₩28,638, 역방향 ₩30000→¥3313. 예시 트립에 `currency:JPY·homeCurrency:KRW` 추가(엔↔원 데모). `.destInput` 핸들로 교통비 예상요금 placeholder 유지.
 4. **사용자 커스텀 경비 분류** — 분류를 **전역**(store.STATE.customCats, localStorage 영속)으로 개인 추가. `store.addCustomCat/removeCustomCat/customCats/usedCustomCats` 신규. 키는 `uc_*` 접두(빌트인/충돌 방지). editor 분류 섹션에 `➕ 직접 추가`(window.prompt) + 커스텀 칩 `✕` 삭제. render `BUILTIN_CATS`/`allCats()`/`catLabel()` 동적화, `dayBudget/tripBudget.byCat`를 고정키→동적 객체로(삭제된 커스텀도 누락 없이 표시). **⚠️핵심 버그 수정**: `defaultStop`이 빌트인 분류 키만 허용해 커스텀 키를 전부 비우던 문제 → `uc_*` 허용 + `load()`에서 customCats를 트립 마이그레이션보다 먼저 로드. 공유/내보내기는 쓰인 커스텀 분류 정의를 동봉(share `xc`, exportJSON `customCats`)하고 가져오기 시 키 보존 병합(`addTripData`→`mergeCustomCats`).
 5. **검증** — Node 로직 23/23(환율 양방향·커스텀 분류 CRUD·예산 집계·공유 라운드트립·영속 복원·검증드롭), puppeteer 라이브(타임라인 겹침 0/4폭·양방향 환산·커스텀 칩 추가/선택·여행모달 행 오버플로 0·콘솔에러 0[구글맵 리퍼러 제외]). **sw.js CACHE v4→v5**.
+
+### 10차 (사용자 피드백 반영) — 2026-06-25
+1. **모바일 입력 시 자동 확대(줌) 차단** — iOS Safari는 글꼴 16px 미만 입력에 포커스 시 페이지를 확대한다. `css/app.css`의 `@media (pointer: coarse)`에 `.input, .select, .textarea { font-size: 16px }` 추가(데스크톱은 14px 유지). 뷰포트 `user-scalable=no`는 접근성상 미사용 — 핀치줌은 그대로 두고 포커스 줌만 제거. **검증: 터치 에뮬레이션 16px / 데스크톱 14px**.
+2. **영업시간 구글 자동 채움** — 목적지 이름으로 검색해 결과를 선택하면 영업시간이 자동 입력된다(비어 있을 때만, 직접 수정 가능). `geo.googleGeocode` 필드마스크에 `regularOpeningHours` 추가 + `geo.compactHours`로 한 줄 요약(같은 영업시간 연속 요일 묶음: `월~일 11:00~23:00` / `월~금 9:00~18:00, 토 …, 일 휴무일`). 키리스 폴백(Nominatim)은 `extratags=1`의 `opening_hours` 사용. editor 결과 onclick에서 `openHoursInput` 자동 채움 + 토스트 "위치·영업시간을 설정했어요". geocode 반환계약에 `hours` 추가(기존 `{name,address,lat,lon}` 호환). ⚠️ 영업시간 필드 포함 시 Places Text Search 과금 티어가 올라갈 수 있음(개인 무료한도 내 권장).
+3. **검증** — `geo.compactHours` node 9/9(매일동일·평일묶음·휴무·영어 weekday_text·대시정규화·null안전), 기존 로직 23/23 회귀, puppeteer 라이브(모바일 입력 16px·영업시간 자동채움·콘솔에러 0[구글맵 리퍼러 제외]). **sw.js CACHE v5→v6**.
 
 ## 알려진 제약 / TODO
 - **정확한 구글 교통비는 'Distance Matrix API' 필요** — 키에 그 API를 추가 허용해야 실거리·실제 대중교통 요금 반영. 미허용이면 직선×1.4 추정(공항 좌표는 채워지므로 기본요금 버그는 해소).

@@ -47,12 +47,12 @@
     return keylessGeocode(query);
   }
 
-  // 구글 Places (New) Text Search
+  // 구글 Places (New) Text Search — 영업시간(regularOpeningHours)까지 함께 받아 자동 채움
   function googleGeocode(query) {
     return TP.gmaps.lib("places").then(function (places) {
       return places.Place.searchByText({
         textQuery: query,
-        fields: ["displayName", "formattedAddress", "location"],
+        fields: ["displayName", "formattedAddress", "location", "regularOpeningHours"],
         language: "ko",
         maxResultCount: 8
       });
@@ -66,21 +66,51 @@
         }
         var nm = p.displayName;
         if (nm && typeof nm === "object") nm = nm.text || "";   // 혹시 객체로 올 때
-        return { name: nm || query, address: p.formattedAddress || "", lat: normLat(lat), lon: normLon(lon) };
+        return { name: nm || query, address: p.formattedAddress || "", lat: normLat(lat), lon: normLon(lon), hours: compactHours(p.regularOpeningHours) };
       }).filter(function (r) { return r.lat != null && r.lon != null; });
     });
   }
 
+  /* 구글 regularOpeningHours → 한 줄 요약(같은 영업시간 연속 요일 묶음).
+     예: ["월요일: 오전 11:00~오후 11:00", ...] → "월~일 오전11:00~오후11:00" / "토 휴무일" */
+  var DAY_AB = {
+    "월요일": "월", "화요일": "화", "수요일": "수", "목요일": "목", "금요일": "금", "토요일": "토", "일요일": "일",
+    "Monday": "월", "Tuesday": "화", "Wednesday": "수", "Thursday": "목", "Friday": "금", "Saturday": "토", "Sunday": "일"
+  };
+  function dayAbbrev(day) { return DAY_AB[day] || (day ? day.slice(0, 1) : ""); }
+  function compactHours(roh) {
+    if (!roh) return "";
+    var descs = roh.weekdayDescriptions || roh.weekday_text || [];
+    if (!descs || !descs.length) return "";
+    var rows = descs.map(function (d) {
+      d = String(d).replace(/\s+/g, " ").trim();
+      var i = d.indexOf(":");
+      var day = i > 0 ? d.slice(0, i).trim() : "";
+      var time = (i > 0 ? d.slice(i + 1) : d).trim().replace(/\s*[–—\-]\s*/g, "~").replace(/\s*~\s*/g, "~");
+      return { ab: dayAbbrev(day), time: time };
+    });
+    var groups = [], cur = null;
+    rows.forEach(function (r) {
+      if (cur && cur.time === r.time) cur.days.push(r.ab);
+      else { cur = { time: r.time, days: [r.ab] }; groups.push(cur); }
+    });
+    return groups.map(function (g) {
+      var label = g.days.length >= 3 ? (g.days[0] + "~" + g.days[g.days.length - 1]) : g.days.join("·");
+      return label + " " + g.time;
+    }).join(", ");
+  }
+
   // 키리스 폴백: Nominatim(OSM) → Open-Meteo(도시명)
   function keylessGeocode(query) {
-    var nomi = "https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=6&accept-language=ko&q=" + encodeURIComponent(query);
+    var nomi = "https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&extratags=1&limit=6&accept-language=ko&q=" + encodeURIComponent(query);
     return fetchJSON(nomi, { timeout: 9000 }).then(function (arr) {
       var out = (arr || []).map(function (r) {
         return {
           name: shortName(r),
           address: r.display_name || "",
           lat: normLat(r.lat), lon: normLon(r.lon),
-          type: r.type, category: r.category
+          type: r.type, category: r.category,
+          hours: (r.extratags && r.extratags.opening_hours) ? String(r.extratags.opening_hours) : ""   // OSM 영업시간(있으면)
         };
       });
       if (out.length) return out;
@@ -412,7 +442,7 @@
   TP.geo = {
     haversine: haversine, hasCoord: hasCoord, fmtDist: fmtDist,
     normLat: normLat, normLon: normLon,
-    geocode: geocode, optimizeOrder: optimizeOrder, pathLen: pathLen,
+    geocode: geocode, optimizeOrder: optimizeOrder, pathLen: pathLen, compactHours: compactHours,
     buildSchedule: buildSchedule, minToHm: minToHm, hmToMin: hmToMin, defaultDwell: defaultDwell,
     cachedRoad: cachedRoad, ensureRoad: ensureRoad,
     dirURL: dirURL, multiDirURL: multiDirURL, searchURL: searchURL

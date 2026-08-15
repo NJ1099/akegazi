@@ -5,6 +5,8 @@
 
   var viewEl, titleEl, backEl, shareBtn, sampleBtn, menuBtn;
   var epoch = 0;
+  var lastRouteKey = null;   // 스크롤 초기화를 실제 화면 이동에만 한정하기 위한 직전 라우트
+  var dragging = false, pendingRender = false;   // 드래그 중 재렌더 보류
   var liveMap = null;
   var dayMode = {};
 
@@ -22,8 +24,31 @@
     U.$("#fileInput").addEventListener("change", doImport);
 
     window.addEventListener("hashchange", render);
+    initOffline();
     render();
     TP.share.checkIncoming();
+  }
+
+  /* ---------- 오프라인 표시 ----------
+   * PWA로 설치해 비행기 안·해외에서 열면 저장된 일정은 그대로 보이지만 검색·지도·날씨는
+   * 조용히 실패한다. 앱이 고장난 것처럼 보이지 않도록 상태를 명시한다. */
+  function initOffline() {
+    var bar = el("div.offline-bar", { role: "status", "aria-live": "polite", hidden: true },
+      ["📴 오프라인 — 저장된 일정은 그대로 볼 수 있어요. 검색·지도·날씨는 연결되면 다시 동작해요."]);
+    var app = U.$("#app");
+    app.insertBefore(bar, U.$("#view"));
+    function sync() {
+      var off = (navigator.onLine === false);
+      bar.hidden = !off;
+      document.body.classList.toggle("is-offline", off);
+    }
+    window.addEventListener("online", function () {
+      sync();
+      TP.money.resetRateFailures();   // 끊긴 동안 근사치로 버틴 환율을 실측으로 되돌린다
+      render();
+    });
+    window.addEventListener("offline", sync);
+    sync();
   }
 
   /* ---------- 라우터 ---------- */
@@ -42,6 +67,9 @@
   }
 
   function render() {
+    // 드래그 중 재렌더가 끼어들면 끌고 있던 카드가 DOM 에서 떨어져 나가 순서 변경이 통째로 버려진다.
+    // 비동기 응답(실거리·환율·날씨)은 언제든 도착하므로, 손을 뗄 때까지 미룬다.
+    if (dragging) { pendingRender = true; return; }
     closeMenu();
     epoch++;
     if (liveMap) { TP.maps.destroy(liveMap); liveMap = null; }
@@ -63,7 +91,10 @@
       renderHome();
     }
     configureAppbar(route);
-    window.scrollTo(0, 0);
+    // 맨 위로 올리는 건 "다른 화면으로 이동했을 때"만. 실거리·환율 응답이 도착해 다시 그릴 때도
+    // 올려버리면, 목록을 읽어 내려가던 사용자가 1초쯤 뒤에 영문 모를 스크롤 튐을 겪는다.
+    var routeKey = route.name + ":" + (route.tripId || "") + ":" + (route.dayId || "");
+    if (routeKey !== lastRouteKey) { lastRouteKey = routeKey; window.scrollTo(0, 0); }
   }
 
   function configureAppbar(route) {
@@ -226,7 +257,7 @@
       rainSlot.innerHTML = "";
       var rb = R.rainBanner(W.indoorPlan(day, wx));
       if (rb) rainSlot.appendChild(rb);
-      if (wx && wx.rainy && mode === "timeline") drawTimeline(day, idx, bodySlot, true, schedule);
+      if (mode === "timeline") R.markRainy(bodySlot, !!(wx && wx.rainy));   // 배지만 갱신(재빌드 없음)
     });
 
     var dtrip = store.activeTrip();
@@ -298,12 +329,16 @@
       var myEpoch = epoch;                 // 재렌더 감지용 스냅샷
       item.classList.add("dragging");
       var moved = false;
+      dragging = true;                     // 드래그 중에는 재렌더를 미룬다(아래 render 참조)
 
       function cleanup() {
+        dragging = false;
         document.removeEventListener("pointermove", onMove);
         document.removeEventListener("pointerup", onUp);
         document.removeEventListener("pointercancel", onUp);
       }
+      // 드래그 중 도착한 비동기 갱신은 순서를 저장한 뒤에 반영한다(먼저 그리면 저장이 무산된다).
+      function flushPending() { if (pendingRender) { pendingRender = false; render(); } }
       function onMove(ev) {
         if (myEpoch !== epoch || !listEl.isConnected) return;   // 재렌더되면 무시
         moved = true;
@@ -314,8 +349,9 @@
       function onUp() {
         cleanup();
         item.classList.remove("dragging");
-        if (!moved || myEpoch !== epoch || !listEl.isConnected) return;   // detached/stale → 저장 안 함
+        if (!moved || myEpoch !== epoch || !listEl.isConnected) { flushPending(); return; }   // detached/stale → 저장 안 함
         var ids = Array.prototype.map.call(listEl.querySelectorAll(".tl-item"), function (it) { return it.dataset.stop; });
+        pendingRender = false;            // 아래 reorderStops 가 어차피 다시 그린다
         store.reorderStops(dayId, ids);   // notify → 재렌더
         // 드래그 직후 합성 click이 카드 편집을 열지 않도록 1회 삼킴
         var swallow = function (ev2) { ev2.stopPropagation(); ev2.preventDefault(); document.removeEventListener("click", swallow, true); };
@@ -368,6 +404,9 @@
   function doImport(e) {
     var file = e.target.files && e.target.files[0];
     if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {                 // 정상 일정 JSON 은 수십 KB — 그 이상은 거른다
+      U.toast("파일이 너무 커요 (2MB 이하)"); e.target.value = ""; return;
+    }
     var reader = new FileReader();
     reader.onload = function () {
       try { store.importJSON(reader.result); location.hash = "#/trip/" + store.activeId(); U.toast("여행을 가져왔어요"); }
@@ -432,7 +471,9 @@
     if (!trip) return;
     var hc = trip.homeCurrency;
     if (!hc || hc === trip.currency) return;
-    if (TP.money.getCachedRate(trip.currency, hc) != null) return;   // 이미 조회됨
+    var st = TP.money.rateStatus(trip.currency, hc);
+    if (st === "ok") return;             // 실측 확보됨
+    if (st === "provisional") return;    // 방금 실패 — 근사치로 표시 중, 잠시 뒤/온라인 복귀 시 재시도(렌더 루프 방지)
     var myEpoch = epoch;
     TP.money.ensureRate(trip.currency, hc).then(function () { if (myEpoch === epoch) render(); });
   }

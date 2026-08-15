@@ -8,9 +8,30 @@
  *
  *   캐시 무효화가 필요하면 CACHE 이름의 버전을 올린다(예: akegazi-v2).
  */
-var CACHE = "akegazi-v6";
+var CACHE = "akegazi-v7";
 
-self.addEventListener("install", function () {
+/* 앱 셸 프리캐시 — 설치 시 한 번에 담아 둔다.
+ * 이유: network-first 는 "한 번이라도 받아본" 리소스만 캐시에 남는다. 여행 앱은 비행기 모드/
+ *      해외 로밍 없이 열리는 게 핵심이라, 첫 방문에 셸 전체를 확보해 둬야 오프라인이 보장된다.
+ * 개별 실패는 무시한다(하나가 404여도 SW 설치 자체는 성공해야 하므로).
+ */
+var SHELL = [
+  "./", "./index.html", "./manifest.webmanifest", "./css/app.css",
+  "./js/config.js", "./js/gmaps.js", "./js/util.js", "./js/store.js", "./js/geo.js",
+  "./js/weather.js", "./js/maps.js", "./js/money.js", "./js/render.js", "./js/editor.js",
+  "./js/share.js", "./js/sample.js", "./js/app.js",
+  "./assets/icon-192.png", "./assets/icon-512.png", "./assets/icon-maskable-512.png",
+  "./assets/apple-touch-icon.png"
+];
+
+self.addEventListener("install", function (e) {
+  e.waitUntil(
+    caches.open(CACHE).then(function (c) {
+      return Promise.all(SHELL.map(function (u) {
+        return c.add(new Request(u, { cache: "reload" })).catch(function () {});   // 개별 실패 무시
+      }));
+    }).catch(function () {})
+  );
   self.skipWaiting();   // 새 SW를 대기 없이 즉시 활성 후보로
 });
 

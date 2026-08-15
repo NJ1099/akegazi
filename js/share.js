@@ -80,8 +80,14 @@
     if (used.length) compact.xc = used.map(function (c) { return [c.k, c.l]; });
     return b64urlEncode(JSON.stringify(compact));
   }
+  /* 받는 쪽 상한 — 보내는 쪽(shareTrip)에는 16,000자 가드가 있지만, 링크는 손으로 만들 수 있으므로
+   * 수신 측에서도 막아야 한다. 상한이 없으면 조작된 링크 하나로 파싱·저장·날씨 조회가 폭주한다.
+   * 정상 일정(90일·일 100곳)은 이 상한에 한참 못 미친다. */
+  var MAX_PAYLOAD = 32768;
+
   function decode(str) {
     try {
+      if (typeof str !== "string" || str.length > MAX_PAYLOAD) return null;
       var c = JSON.parse(b64urlDecode(str));
       if (!c || !Array.isArray(c.d)) return null;
       return {

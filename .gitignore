@@ -14,3 +14,6 @@ node_modules/
 
 # Claude Code 로컬 설정
 .claude/
+
+# 브라우저 검증 산출물 (Playwright MCP)
+.playwright-mcp/

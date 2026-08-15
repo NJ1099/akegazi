@@ -94,6 +94,20 @@
       });
       box.appendChild(field("종류", typeWrap));
 
+      // ----- 날짜 이동 (편집 모드 + 날짜가 2개 이상일 때만) -----
+      // "이건 2일차로 미루자"를 삭제→재입력 없이. 저장 시 대상 날짜의 맨 뒤로 옮긴다.
+      var moveSel = null;
+      if (existing && trip && trip.days.length > 1) {
+        moveSel = el("select.select", { "aria-label": "이 장소를 옮길 날짜" });
+        trip.days.forEach(function (d, i) {
+          var label = "Day " + (i + 1) + (d.date ? " · " + U.fmtDate(d.date) : "") + (d.label ? " · " + d.label : "");
+          var opt = el("option", { value: d.id, text: label });
+          if (d.id === dayId) opt.selected = true;
+          moveSel.appendChild(opt);
+        });
+        box.appendChild(field("날짜", moveSel, "다른 날로 옮기면 입력한 내용 그대로 그 날 맨 뒤에 붙어요"));
+      }
+
       // ----- 공항 시각 (공항 타입에서만 표시) -----
       var arriveInput = timeInput(f.arriveTime, function (v) { f.arriveTime = v; });
       var departInput = timeInput(f.departTime, function (v) { f.departTime = v; });
@@ -170,7 +184,12 @@
             this.textContent = "지도 접기";
             if (!pickMap) {
               pickMap = TP.maps.picker(mapBox, TP.geo.hasCoord(f) ? f : null, function (p) {
-                f.lat = p.lat; f.lon = p.lon; showPicked();
+                // 검색으로 채운 주소가 남아 있는데 지도에서 전혀 다른 지점을 찍으면 좌표와 주소가 어긋난다.
+                // 미세 조정(200m 이내)은 주소를 유지하고, 그보다 멀리 옮기면 옛 주소를 지운다.
+                if (f.address && TP.geo.hasCoord(f) && TP.geo.haversine(f, p) > 200) f.address = "";
+                f.lat = p.lat; f.lon = p.lon;
+                if (addrInput) addrInput.value = f.address;
+                showPicked();
               });
             }
           } else { mapBox.style.display = "none"; this.textContent = "지도에서 직접 선택"; }
@@ -202,7 +221,11 @@
       // ----- 이동수단 (이전 → 여기): 첫 장소가 아니면 -----
       if (prevStop) {
         var MODES = [["transit", "🚌 대중교통"], ["taxi", "🚕 택시"], ["walk", "🚶 도보"], ["none", "안 함"]];
-        var fareCtl = moneyDual(cur, homeCur, f.fareAmount, function (v) { f.fareAmount = v; });   // 양방향 통화 입력
+        // 직접 입력한 요금은 "직전 장소 → 여기" 구간의 값이므로, 어느 구간이었는지 함께 기록한다.
+        var fareCtl = moneyDual(cur, homeCur, f.fareAmount, function (v) {
+          f.fareAmount = v;
+          f.fareFrom = (v == null) ? "" : prevStop.id;
+        });
         var fareInput = fareCtl.destInput;                       // 예상요금 placeholder 갱신용
         var modeWrap = el("div.chips");
         function legKm() { return (TP.geo.hasCoord(prevStop) && TP.geo.hasCoord(f)) ? TP.geo.haversine(prevStop, f) / 1000 : null; }
@@ -219,10 +242,15 @@
           }, [mo[1]]));
         });
         updFare();
+        // 순서가 바뀌어 직전 장소가 달라졌으면, 적어 둔 금액이 지금 구간의 값이 아님을 알린다.
+        var staleFare = (typeof f.fareAmount === "number" && f.fareFrom && f.fareFrom !== prevStop.id);
+        var staleNote = staleFare ? el("div.hint.hint--warn", {
+          text: "순서가 바뀌어 직전 장소가 ‘" + (prevStop.title || "이전 장소") + "’ 으로 달라졌어요. 적어 둔 금액은 예전 구간 기준이라 예산에는 예상값이 쓰이고 있어요 — 확인 후 저장하면 지금 구간으로 반영돼요."
+        }) : null;
         box.appendChild(field("이전 장소 → 여기 이동수단",
           el("div", null, [modeWrap, el("div", { style: { marginTop: "8px" } }, [
             el("label", { style: { display: "block", fontSize: "12px", fontWeight: "800", color: "var(--text-2)", marginBottom: "6px" }, text: "교통비 (비우면 예상값)" }),
-            fareCtl
+            fareCtl, staleNote
           ])]),
           (homeCur && homeCur !== cur) ? "한쪽에 적으면 다른 통화로 자동 환산돼요. 직접 입력하면 그 값으로 합산돼요" : "거리 기반 예상요금이며, 직접 입력하면 그 값으로 합산돼요"));
       }
@@ -337,10 +365,18 @@
         el("button.btn.btn--block", {
           onclick: function () {
             if (!f.title.trim()) { U.toast("장소 이름을 입력하세요"); titleInput.focus(); return; }
-            if (existing) store.updateStop(dayId, stopId, f);
-            else store.addStop(dayId, f);
+            // 편집창에서 금액을 확인하고 저장했다면, 그 값을 "지금 구간"의 요금으로 인정한다.
+            if (prevStop && typeof f.fareAmount === "number") f.fareFrom = prevStop.id;
+            var moved = "";
+            if (existing) {
+              store.updateStop(dayId, stopId, f);
+              if (moveSel && moveSel.value && moveSel.value !== dayId) {
+                var toIdx = store.dayIndex(moveSel.value);
+                if (store.moveStopToDay(dayId, stopId, moveSel.value)) moved = "Day " + (toIdx + 1) + "(으)로 옮겼어요";
+              }
+            } else store.addStop(dayId, f);
             close();
-            U.toast(existing ? "수정했어요" : "추가했어요");
+            U.toast(moved || (existing ? "수정했어요" : "추가했어요"));
           }
         }, [existing ? "저장" : "추가"]),
         el("button.btn.btn--block.btn--ghost", { onclick: close }, ["취소"])
@@ -416,7 +452,13 @@
     function fromH() { if (lock) return; lock = true; var v = parseFloat(hInput.value); dInput.value = isFinite(v) ? fmtNum(TP.money.convert(v, homeCur, destCur), destCur) : ""; lock = false; }
     dInput.addEventListener("input", function () { fromD(); emit(); });
     hInput.addEventListener("input", function () { fromH(); emit(); });   // 내통화로 적으면 여행통화(저장값)로 환산
-    TP.money.ensureRate(destCur, homeCur).then(function () { if (document.body.contains(dInput)) fromD(); });   // 실시간 환율 반영
+    // 실시간 환율이 도착하면 환산값을 갱신한다. 단 사용자가 그 칸에 입력 중이면 건드리지 않는다
+    // (응답이 늦게 오면 타이핑하던 숫자가 갑자기 바뀌어 버린다).
+    TP.money.ensureRate(destCur, homeCur).then(function () {
+      if (!document.body.contains(dInput)) return;
+      if (document.activeElement === hInput || document.activeElement === dInput) return;
+      fromD();
+    });
     fromD();
     var node = el("div.money-dual", null, [
       wrapLabeled(TP.money.cfg(destCur).sym + " " + TP.money.cfg(destCur).name + " · 저장 기준", dInput),

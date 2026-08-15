@@ -32,7 +32,13 @@
 
     // 실내/야외 (우천 대응)
     if (stop.indoor === true) out.push(badge("비와도 OK", "badge--cyan"));
-    else if (stop.indoor === false) out.push(badge(rainy ? "야외 · 우천주의" : "야외", rainy ? "badge--amber" : ""));
+    else if (stop.indoor === false) {
+      // 날씨는 타임라인보다 늦게 도착한다. 이 배지 하나 때문에 타임라인을 통째로 다시 만들지 않도록
+      // 표시를 달아 두고, 예보가 오면 markRainy()가 이 노드들만 바꾼다.
+      var ob = badge(rainy ? "야외 · 우천주의" : "야외", rainy ? "badge--amber" : "");
+      ob.dataset.outdoor = "1";
+      out.push(ob);
+    }
 
     // 영업/휴무
     var ci = closingInfo(stop, day);
@@ -349,9 +355,17 @@
   }
 
   /* ---- 예산(경비 + 예상 교통비) ---- */
+  /* 직접 입력한 교통비는 "직전 장소 → 여기" 한 구간의 값이다. 동선 최적화·드래그 정렬·날짜 이동으로
+   * 직전 장소가 바뀌면 그 금액은 근거를 잃으므로(예: A→B 택시 5,000엔이 공항→B 요금으로 둔갑)
+   * 예산·표시에서는 추정으로 되돌린다. 입력값 자체는 지우지 않아 편집창에서 다시 확인할 수 있다.
+   * fareFrom 이 비어 있으면 구버전·공유 복원 데이터이므로 종전대로 신뢰한다. */
+  function fareApplies(prev, s) {
+    if (!s.fareFrom) return true;
+    return !!prev && prev.id === s.fareFrom;
+  }
   function legFare(prev, s, currency) {
     if (!s) return 0;
-    if (typeof s.fareAmount === "number") return s.fareAmount;     // 직접 입력 우선
+    if (typeof s.fareAmount === "number" && fareApplies(prev, s)) return s.fareAmount;   // 직접 입력 우선
     var mode = s.arriveBy;
     if (mode === "walk" || mode === "none") return 0;
     var estimable = prev && TP.geo.hasCoord(prev) && TP.geo.hasCoord(s);
@@ -423,8 +437,18 @@
     ]);
   }
 
+  /* 이미 그려진 타임라인의 '야외' 배지만 우천 상태로 바꾼다(전체 재빌드 대신).
+   * 비 예보인 날 타임라인이 두 번 만들어지던 것을 없앤다 — 차이가 이 배지 하나뿐이기 때문. */
+  function markRainy(rootEl, rainy) {
+    if (!rootEl) return;
+    U.$$("[data-outdoor]", rootEl).forEach(function (b) {
+      b.textContent = rainy ? "야외 · 우천주의" : "야외";
+      b.classList.toggle("badge--amber", !!rainy);
+    });
+  }
+
   TP.render = {
-    timeline: timeline, stopCard: stopCard, badgesFor: badgesFor,
+    timeline: timeline, stopCard: stopCard, badgesFor: badgesFor, markRainy: markRainy,
     weatherBanner: weatherBanner, rainBanner: rainBanner, scheduleBanner: scheduleBanner,
     dayBudget: dayBudget, tripBudget: tripBudget, budgetBanner: budgetBanner,
     COST_CATS: BUILTIN_CATS, BUILTIN_CATS: BUILTIN_CATS, allCats: allCats,

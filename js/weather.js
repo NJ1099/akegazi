@@ -8,8 +8,10 @@
   var RAIN_MM = 3;      // 일 강수량 임계
   var RAIN_POP = 60;    // 강수확률(%) 임계
   var mem = {};         // 세션 캐시
+  var inflight = {};    // 진행 중 요청(같은 날짜·좌표의 중복 발사 방지)
   var LS_KEY = "akegazi.wx.v1";
   var TTL = 2 * 3600 * 1000;
+  var FAIL_TTL = 90 * 1000;   // 실패는 90초만 기억 — 회선이 돌아오면 곧 다시 시도한다
 
   var lsCache = (function () { try { return JSON.parse(localStorage.getItem(LS_KEY)) || {}; } catch (e) { return {}; } })();
   function saveLS() { try { localStorage.setItem(LS_KEY, JSON.stringify(lsCache)); } catch (e) {} }
@@ -35,9 +37,12 @@
       return Promise.resolve({ available: false, reason: "위치 정보 필요" });
     }
     var key = date + "|" + lat.toFixed(2) + "|" + lon.toFixed(2);
-    if (mem[key] && (Date.now() - mem[key]._t) < TTL) return Promise.resolve(mem[key].v);
+    if (mem[key] && (Date.now() - mem[key]._t) < (mem[key]._ttl || TTL)) return Promise.resolve(mem[key].v);
     var cached = lsCache[key];
     if (cached && (Date.now() - cached._t) < TTL) { mem[key] = cached; return Promise.resolve(cached.v); }
+    // 같은 날짜·좌표를 이미 조회 중이면 그 약속을 함께 쓴다. 캐시는 "완료된" 응답만 담기 때문에,
+    // 이게 없으면 여행 화면이 다시 그려질 때마다 아직 도착하지 않은 요청들이 통째로 재발사된다.
+    if (inflight[key]) return inflight[key];
 
     var off = TP.util.daysFromToday(date);
     if (off == null) return Promise.resolve({ available: false, reason: "날짜 오류" });
@@ -54,9 +59,9 @@
     var url = host + "?latitude=" + lat + "&longitude=" + lon +
               "&daily=" + daily + "&timezone=auto&start_date=" + date + "&end_date=" + date;
 
-    return fetchJSON(url, { timeout: 9000 }).then(function (j) {
+    var p = fetchJSON(url, { timeout: 9000 }).then(function (j) {
       var d = j && j.daily;
-      if (!d || !d.time || !d.time.length) return { available: false, reason: "데이터 없음" }; // 빈 응답은 캐시 안 함
+      if (!d || !d.time || !d.time.length) return finish(key, { available: false, reason: "데이터 없음" }, FAIL_TTL);
       var code = num(d.weather_code), tmax = num(d.temperature_2m_max), tmin = num(d.temperature_2m_min);
       var precip = num(d.precipitation_sum), pop = d.precipitation_probability_max ? num(d.precipitation_probability_max) : null;
       var m = codeMeta(code);
@@ -67,12 +72,21 @@
         tmax: tmax, tmin: tmin, precip: precip, pop: pop, rainy: rainy, archive: isArchive
       };
       return finish(key, v);
-    }).catch(function () { return { available: false, reason: "날씨를 불러오지 못했어요" }; });
+    }).catch(function () {
+      // 실패도 짧게 기억한다. 안 그러면 기내·지하철·해외 로밍처럼 계속 실패하는 상황에서
+      // 화면을 옮길 때마다 9초짜리 요청이 날짜 수만큼 새로 뜬다.
+      return finish(key, { available: false, reason: "날씨를 불러오지 못했어요" }, FAIL_TTL);
+    });
+    p.then(function () { delete inflight[key]; }, function () { delete inflight[key]; });
+    inflight[key] = p;
+    return p;
 
     function num(a) { return (a && a.length != null) ? a[0] : a; }
   }
-  function finish(key, v) {
+  /* ttl 을 주면 그 시간만 유효한 단명 캐시(실패 응답용). 실패는 localStorage 로 넘기지 않는다. */
+  function finish(key, v, ttl) {
     var entry = { _t: Date.now(), v: v };
+    if (ttl) { entry._ttl = ttl; mem[key] = entry; return v; }
     mem[key] = entry;
     lsCache[key] = entry;
     saveLS();

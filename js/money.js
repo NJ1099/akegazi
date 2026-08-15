@@ -45,8 +45,11 @@
   }
 
   /* ---------- 환율 환산 ---------- */
-  var rateCache = {};   // "JPY>KRW" → 1 from당 to 환율
+  var rateCache = {};   // "JPY>KRW" → 1 from당 to 환율 (실측만 저장)
   var fetching = {};
+  var failedAt = {};    // 조회 실패 시각(ms) — 폭주 없이 재시도하기 위한 기록
+  var RETRY_MS = 30000;
+  function nowMs() { return new Date().getTime(); }
   var USD_VAL = { USD: 1, JPY: 0.0067, KRW: 0.00074, EUR: 1.08 };   // 폴백 근사(1단위의 USD 가치)
   function rateKey(a, b) { return a + ">" + b; }
   function fallbackRate(from, to) { return (USD_VAL[from] && USD_VAL[to]) ? USD_VAL[from] / USD_VAL[to] : null; }
@@ -55,22 +58,35 @@
     var v = rateCache[rateKey(from, to)];
     return (v != null) ? v : fallbackRate(from, to);
   }
-  function getCachedRate(from, to) {        // 실/폴백 캐시만(미조회면 null) — 갱신 필요 판단용
+  function getCachedRate(from, to) {        // 실측 캐시만(미조회면 null) — 갱신 필요 판단용
     if (from === to) return 1;
     var v = rateCache[rateKey(from, to)];
     return (v != null) ? v : null;
   }
-  function ensureRate(from, to) {           // 실 환율 비동기 로드 → 캐시(실패 시 폴백 캐시)
+  /* 환율 상태: "ok"=실측 확보 / "provisional"=조회 실패 직후(폴백 근사 사용 중, 재시도 대기) / "none"=미조회
+   * 실패한 조회를 캐시에 넣어버리면 네트워크가 복구돼도 세션 내내 근사치에 갇힌다. 그렇다고 실패마다
+   * 즉시 재시도하면 렌더 루프가 된다. 그래서 실패는 시각만 기록하고 RETRY_MS 뒤에 다시 열어 준다. */
+  function rateStatus(from, to) {
+    if (from === to) return "ok";
+    var k = rateKey(from, to);
+    if (rateCache[k] != null) return "ok";
+    if (failedAt[k] != null && (nowMs() - failedAt[k]) < RETRY_MS) return "provisional";
+    return "none";
+  }
+  function resetRateFailures() { failedAt = {}; }   // 온라인 복귀 시 즉시 재조회 허용
+  function ensureRate(from, to) {           // 실 환율 비동기 로드 → 캐시(실패는 캐시하지 않음)
     if (from === to) return Promise.resolve(1);
     var k = rateKey(from, to);
     if (rateCache[k] != null) return Promise.resolve(rateCache[k]);
     if (fetching[k]) return fetching[k];
+    if (failedAt[k] != null && (nowMs() - failedAt[k]) < RETRY_MS) return Promise.resolve(fallbackRate(from, to));
     var url = "https://open.er-api.com/v6/latest/" + encodeURIComponent(from);
     fetching[k] = TP.util.fetchJSON(url, { timeout: 8000 }).then(function (j) {
       var r = j && j.rates && j.rates[to];
-      rateCache[k] = (typeof r === "number" && isFinite(r) && r > 0) ? r : fallbackRate(from, to);
-      delete fetching[k]; return rateCache[k];
-    }).catch(function () { rateCache[k] = fallbackRate(from, to); delete fetching[k]; return rateCache[k]; });
+      if (typeof r === "number" && isFinite(r) && r > 0) { rateCache[k] = r; delete failedAt[k]; }
+      else failedAt[k] = nowMs();                                  // 응답은 왔지만 해당 통화가 없음 → 실패로 취급
+      delete fetching[k]; return rate(from, to);
+    }).catch(function () { failedAt[k] = nowMs(); delete fetching[k]; return fallbackRate(from, to); });
     return fetching[k];
   }
   function convert(amount, from, to) {
@@ -97,6 +113,7 @@
   TP.money = {
     CUR: CUR, ORDER: ORDER, cfg: cfg, symbol: symbol,
     format: format, estimateFare: estimateFare, currencyForRegion: currencyForRegion,
-    rate: rate, getCachedRate: getCachedRate, ensureRate: ensureRate, convert: convert, formatConv: formatConv
+    rate: rate, getCachedRate: getCachedRate, ensureRate: ensureRate, convert: convert, formatConv: formatConv,
+    rateStatus: rateStatus, resetRateFailures: resetRateFailures
   };
 })(window.TP = window.TP || {});

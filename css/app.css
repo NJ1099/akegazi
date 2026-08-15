@@ -119,6 +119,21 @@ a { color: inherit; }
 }
 .appbar__title:hover { color: #fff; }
 .appbar__actions { display: flex; gap: 8px; flex: 0 0 auto; }
+
+/* 오프라인 배너 — 앱바 바로 아래에 붙어 함께 고정된다(비행기 모드/해외 로밍 없이 열었을 때) */
+.offline-bar {
+  position: sticky;
+  top: 0;
+  z-index: 39;
+  padding: 8px 16px;
+  background: var(--c-amber-bg);
+  border-bottom: 1px solid var(--line);
+  color: var(--c-amber);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+  text-align: center;
+}
 .iconbtn {
   border: 1px solid var(--line);
   background: var(--surface);
@@ -550,6 +565,8 @@ iframe.day-map { border: 0; display: block; }
 .field { margin-bottom: 13px; }
 .field > label { display: block; font-size: 12px; font-weight: 800; color: var(--text-2); margin-bottom: 6px; letter-spacing: -.01em; }
 .field .hint { color: var(--text-3); font-weight: 600; font-size: 11px; }
+/* 구간이 바뀌어 직접 입력한 교통비가 더는 맞지 않을 때의 경고 */
+.field .hint--warn { display: block; margin-top: 7px; color: var(--c-amber); font-size: 11.5px; line-height: 1.5; }
 .input, .select, .textarea {
   width: 100%; background: var(--surface); color: var(--text);
   border: 1px solid var(--line-strong); border-radius: 11px;

@@ -35,6 +35,15 @@
     return out.slice(0, 40);   // 과도한 개수 방어
   }
 
+  /* 외부 데이터 방어용 텍스트 정규화 — 문자열이 아닌 값(배열·객체)도 문자열로 확정하고 길이를 자른다.
+   * 자유 텍스트에 상한이 없으면 조작된 공유 링크가 수 MB 문자열로 저장소를 채울 수 있다. */
+  function clampText(v, max) {
+    if (v == null) return "";
+    var s = (typeof v === "string") ? v : String(v);
+    return (s.length > max) ? s.slice(0, max) : s;
+  }
+  function isISODate(s) { return typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) && !!TP.util.parseDate(s); }
+
   function emptyTrip(partial) { return Object.assign({ id: uid(), title: "새 여행", region: "", currency: "JPY", homeCurrency: "", days: [] }, partial || {}); }
   function defaultDay(partial) { return Object.assign({ id: uid(), date: "", label: "", stops: [] }, partial || {}); }
   function defaultStop(partial) {
@@ -42,11 +51,24 @@
       id: uid(), type: "attraction", title: "", subtitle: "", address: "",
       lat: null, lon: null, time: "", durationLabel: "",
       arriveTime: "", departTime: "", stayMin: null,
-      arriveBy: "", fareAmount: null, costAmount: null, payment: "", costCategory: "",
+      arriveBy: "", fareAmount: null, fareFrom: "", costAmount: null, payment: "", costCategory: "",
       indoor: null, openHours: "", closingDays: [], closingNote: "",
       reservation: "none", reservationNote: "", fixed: false, photoSpot: false,
       note: "", cost: ""
     }, partial || {});
+    // 자유 텍스트: 타입·길이 확정(공유/가져오기로 들어온 비정상 값 방어)
+    s.title = clampText(s.title, 120);
+    s.subtitle = clampText(s.subtitle, 120);
+    s.address = clampText(s.address, 200);
+    s.durationLabel = clampText(s.durationLabel, 60);
+    s.openHours = clampText(s.openHours, 300);
+    s.closingNote = clampText(s.closingNote, 200);
+    s.reservationNote = clampText(s.reservationNote, 200);
+    s.note = clampText(s.note, 1000);
+    s.cost = clampText(s.cost, 60);
+    s.time = clampText(s.time, 5);
+    s.arriveTime = clampText(s.arriveTime, 5);
+    s.departTime = clampText(s.departTime, 5);
     s.lat = (typeof s.lat === "number" && isFinite(s.lat) && s.lat >= -90 && s.lat <= 90) ? s.lat : null;
     s.lon = (typeof s.lon === "number" && isFinite(s.lon) && s.lon >= -180 && s.lon <= 180) ? s.lon : null;
     // 체류시간(분): 0 이상 정수만, 아니면 null(타입별 기본값 사용)
@@ -54,6 +76,9 @@
     s.stayMin = (isFinite(sm) && sm >= 0) ? sm : null;
     // 금액(교통비/경비): 0 이상 숫자만, 아니면 null
     var fa = parseFloat(s.fareAmount); s.fareAmount = (isFinite(fa) && fa >= 0) ? fa : null;
+    // 직접 입력한 교통비가 "어느 구간의 요금인지"(직전 장소 id). 순서가 바뀌면 그 값은 근거를 잃는다.
+    // 비어 있으면(구버전·공유 복원 데이터) 검사하지 않고 그대로 신뢰한다 — 하위호환.
+    s.fareFrom = (typeof s.fareFrom === "string") ? s.fareFrom : "";
     var ca = parseFloat(s.costAmount); s.costAmount = (isFinite(ca) && ca >= 0) ? ca : null;
     if (["transit", "taxi", "walk", "none"].indexOf(s.arriveBy) < 0) s.arriveBy = "";
     if (["credit", "debit", "cash"].indexOf(s.payment) < 0) s.payment = "";
@@ -64,19 +89,27 @@
     return s;
   }
 
+  /* 외부에서 들어온 데이터(공유 링크·JSON 가져오기)의 규모 상한.
+   * 상한이 없으면 조작된 링크 하나로 날짜 수천 개를 밀어 넣어 날씨 조회 폭주·localStorage 오염을
+   * 유발할 수 있다(자기증폭형 DoS). 실제 여행 일정으로는 닿을 수 없는 넉넉한 값으로 자른다. */
+  var MAX_DAYS = 90, MAX_STOPS = 100;
+
   function migrateTrip(trip) {
     if (!trip || typeof trip !== "object") return emptyTrip();
     if (!trip.id) trip.id = uid();
-    if (!trip.title) trip.title = "새 여행";
-    if (typeof trip.region !== "string") trip.region = "";
+    trip.title = clampText(trip.title, 120) || "새 여행";     // 배열/객체가 와도 문자열로 확정(내보내기 크래시 방지)
+    if (typeof trip.region !== "string") trip.region = ""; else trip.region = clampText(trip.region, 80);
     var validCur = TP.money && TP.money.CUR && TP.money.CUR[trip.currency];   // money.js의 통화표 기준
     if (!validCur) trip.currency = "JPY";
     if (typeof trip.homeCurrency !== "string" || (trip.homeCurrency && TP.money && TP.money.CUR && !TP.money.CUR[trip.homeCurrency])) trip.homeCurrency = "";
     if (!Array.isArray(trip.days)) trip.days = [];
+    if (trip.days.length > MAX_DAYS) trip.days = trip.days.slice(0, MAX_DAYS);
     trip.days.forEach(function (d) {
       if (!d.id) d.id = uid();
-      if (d.date && !TP.util.parseDate(d.date)) d.date = "";
+      if (!isISODate(d.date)) d.date = "";                 // 엄격 YYYY-MM-DD 만 통과(날씨 URL 파라미터 주입 차단)
+      d.label = clampText(d.label, 80);
       if (!Array.isArray(d.stops)) d.stops = [];
+      if (d.stops.length > MAX_STOPS) d.stops = d.stops.slice(0, MAX_STOPS);
       d.stops = d.stops.map(function (s) { return defaultStop(s); });
     });
     return trip;
@@ -207,6 +240,20 @@
     if (to < 0 || to >= d.stops.length || from === to) return;
     var arr = d.stops, item = arr.splice(from, 1)[0]; arr.splice(to, 0, item); notify();
   }
+  /* 장소를 같은 여행의 다른 날짜로 옮긴다(대상 날짜의 맨 뒤에 붙음).
+   * 일정을 짜다 보면 "이건 2일차로 미루자"가 잦은데, 지금까지는 삭제 후 재입력뿐이었다.
+   * 객체를 그대로 옮기므로 좌표·경비·영업시간 등 입력값이 하나도 유실되지 않는다. */
+  function moveStopToDay(fromDayId, stopId, toDayId) {
+    if (!fromDayId || !toDayId || fromDayId === toDayId) return false;
+    var from = day(fromDayId), to = day(toDayId);
+    if (!from || !to) return false;
+    var idx = -1;
+    for (var i = 0; i < from.stops.length; i++) { if (from.stops[i].id === stopId) { idx = i; break; } }
+    if (idx < 0) return false;
+    to.stops.push(from.stops.splice(idx, 1)[0]);
+    notify();
+    return true;
+  }
 
   /* ---- 가져오기/내보내기 (활성 여행) ---- */
   function exportJSON() {
@@ -225,7 +272,7 @@
     setTitle: setTitle, day: day, dayAt: dayAt, dayIndex: dayIndex, stop: stop,
     addDay: addDay, updateDay: updateDay, removeDay: removeDay,
     addStop: addStop, updateStop: updateStop, removeStop: removeStop,
-    reorderStops: reorderStops, moveStop: moveStop,
+    reorderStops: reorderStops, moveStop: moveStop, moveStopToDay: moveStopToDay,
     exportJSON: exportJSON, importJSON: importJSON,
     defaultStop: defaultStop, defaultDay: defaultDay
   };

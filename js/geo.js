@@ -36,15 +36,49 @@
      1순위: 구글 Places Text Search(키 있을 때) — 장소명/주소 품질 우수
      폴백: Nominatim(OSM) → Open-Meteo(도시명). 키 없거나 구글 실패/무결과 시.
      반환 계약: [{ name, address, lat, lon }] (editor.js가 의존) */
+  /* 검색 결과 캐시 — Places Text Search 는 호출당 과금이다. 이름을 타이핑하면 디바운스가 걸려도
+   * 어절이 끊길 때마다 접두 질의("오사카", "오사카 도톤보리", …)가 각각 과금되고, 장소를 다시 열어
+   * 이름을 고치면 같은 질의가 또 나간다. 장소명 검색 결과는 사실상 불변이라 안전하게 캐시할 수 있다. */
+  var GEO_LS_KEY = "akegazi.geo.v1";
+  var GEO_TTL = 14 * 24 * 3600 * 1000;   // 2주
+  var GEO_MAX = 300;                     // 저장 상한(오래된 것부터 버림)
+  var geoMem = (function () { try { return JSON.parse(localStorage.getItem(GEO_LS_KEY)) || {}; } catch (e) { return {}; } })();
+  var geoInflight = {};
+  function geoKey(q) { return q.toLowerCase().replace(/\s+/g, " ").trim(); }
+  function geoSave() {
+    try {
+      var keys = Object.keys(geoMem);
+      if (keys.length > GEO_MAX) {
+        keys.sort(function (a, b) { return (geoMem[a]._t || 0) - (geoMem[b]._t || 0); });
+        keys.slice(0, keys.length - GEO_MAX).forEach(function (k) { delete geoMem[k]; });
+      }
+      localStorage.setItem(GEO_LS_KEY, JSON.stringify(geoMem));
+    } catch (e) {}
+  }
+
   function geocode(query) {
     query = (query || "").trim();
     if (!query) return Promise.resolve([]);
+    var k = geoKey(query);
+    var hit = geoMem[k];
+    if (hit && (Date.now() - hit._t) < GEO_TTL && hit.v && hit.v.length) return Promise.resolve(hit.v.slice());
+    if (geoInflight[k]) return geoInflight[k];
+
+    var p;
     if (TP.gmaps && TP.gmaps.hasKey()) {
-      return googleGeocode(query).then(function (list) {
+      p = googleGeocode(query).then(function (list) {
         return list.length ? list : keylessGeocode(query);   // 구글 무결과 → 폴백
       }).catch(function () { return keylessGeocode(query); }); // 구글 오류 → 폴백
+    } else {
+      p = keylessGeocode(query);
     }
-    return keylessGeocode(query);
+    p = p.then(function (list) {
+      if (list && list.length) { geoMem[k] = { _t: Date.now(), v: list }; geoSave(); }   // 무결과·실패는 캐시하지 않음
+      return list;
+    });
+    p.then(function () { delete geoInflight[k]; }, function () { delete geoInflight[k]; });
+    geoInflight[k] = p;
+    return p;
   }
 
   // 구글 Places (New) Text Search — 영업시간(regularOpeningHours)까지 함께 받아 자동 채움
@@ -367,8 +401,37 @@
   /* ---------- 구글 실거리(Distance Matrix) — 교통비 정확도용 ----------
      좌표 두 점의 실제 도로/대중교통 거리·시간을 캐시. 'Distance Matrix API'가 키에
      허용돼 있어야 동작(없으면 null → 직선거리×도로계수 폴백). 대중교통 요금이 오면 그대로 사용. */
+  /* 실거리 캐시 — Distance Matrix 도 호출당 과금인데, 두 좌표 사이의 도로 거리는 사실상 변하지 않는다.
+   * 메모리에만 두면 새로고침할 때마다 하루치(장소 15곳이면 ~11건)를 통째로 다시 사서 쓰게 된다.
+   * 성공한 조회만 저장한다(실패는 회선 문제일 수 있으므로 다음 기회에 다시 시도). */
+  var ROAD_LS_KEY = "akegazi.road.v1";
+  var ROAD_TTL = 30 * 24 * 3600 * 1000;   // 30일
+  var ROAD_MAX = 500;
   var roadCache = {};      // key → {km,min,fareValue?,fareCurrency?} | null(실패) | undefined(미조회)
+  var roadStamp = {};      // key → 저장 시각(영속 캐시 정리용)
   var roadFetching = {};
+  (function loadRoads() {
+    try {
+      var raw = JSON.parse(localStorage.getItem(ROAD_LS_KEY)) || {};
+      var now = Date.now();
+      Object.keys(raw).forEach(function (k) {
+        var e = raw[k];
+        if (e && e.v && (now - e._t) < ROAD_TTL) { roadCache[k] = e.v; roadStamp[k] = e._t; }
+      });
+    } catch (e) {}
+  })();
+  function roadSave() {
+    try {
+      var keys = Object.keys(roadStamp);
+      if (keys.length > ROAD_MAX) {
+        keys.sort(function (a, b) { return roadStamp[a] - roadStamp[b]; });
+        keys.slice(0, keys.length - ROAD_MAX).forEach(function (k) { delete roadStamp[k]; });
+      }
+      var out = {};
+      Object.keys(roadStamp).forEach(function (k) { if (roadCache[k]) out[k] = { _t: roadStamp[k], v: roadCache[k] }; });
+      localStorage.setItem(ROAD_LS_KEY, JSON.stringify(out));
+    } catch (e) {}
+  }
   function roundC(v) { return Math.round(v * 10000) / 10000; }
   function roadKey(a, b, mode) { return roundC(a.lat) + "," + roundC(a.lon) + ">" + roundC(b.lat) + "," + roundC(b.lon) + "|" + mode; }
   function cachedRoad(a, b, mode) {
@@ -396,7 +459,9 @@
               if (elr.fare && typeof elr.fare.value === "number") { out.fareValue = elr.fare.value; out.fareCurrency = elr.fare.currency; }
             }
           } catch (e) {}
-          roadCache[k] = out; delete roadFetching[k]; resolve(out);
+          roadCache[k] = out; delete roadFetching[k];
+          if (out) { roadStamp[k] = Date.now(); roadSave(); }   // 성공만 영속화
+          resolve(out);
         });
       });
     }).catch(function () { roadCache[k] = null; delete roadFetching[k]; return null; });

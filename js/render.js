@@ -410,14 +410,46 @@
     });
     return agg;
   }
+  /* 예산 항목을 큰 순으로 — [{key,label,value}] */
+  function budgetItems(b) {
+    var items = [], seen = {};
+    allCats().forEach(function (c) {
+      if (b.byCat[c[0]] > 0) { items.push({ key: c[0], label: c[1], value: b.byCat[c[0]] }); seen[c[0]] = 1; }
+    });
+    Object.keys(b.byCat).forEach(function (k) {   // 삭제된 커스텀 분류도 누락 없이
+      if (!seen[k] && b.byCat[k] > 0) items.push({ key: k, label: catLabel(k), value: b.byCat[k] });
+    });
+    if (b.transport > 0) items.push({ key: "_transport", label: "🚌 교통(예상)", value: b.transport });
+    items.sort(function (x, y) { return y.value - x.value; });   // 큰 지출이 위로
+    return items;
+  }
+
+  /* 분류별 지출 막대 —
+   * 읽는 사람이 하는 일은 "어디에 얼마 썼나"(크기 비교)라서 한 가지 색의 가로 막대로 그린다.
+   * 분류마다 다른 색을 주는 누적 막대도 만들어 봤지만, 분류가 5개를 넘으면 색각이상에서 구분이
+   * 무너진다(dataviz validator 실측: 6색 all-pairs 에서 ΔE 1.6 — 통과 한계는 5색). 게다가 지출이
+   * 없는 분류는 통째로 빠져 아무 색끼리나 이웃이 되므로 "인접만 검증"으로도 안전을 보장할 수 없다.
+   * 한 색이면 그 문제가 사라지고, 값은 각 줄에 직접 적혀 툴팁에 기대지 않는다. */
+  function budgetChart(items, currency) {
+    if (!items.length) return null;
+    var M = TP.money;
+    var max = items.reduce(function (a, s) { return Math.max(a, s.value); }, 0);
+    if (max <= 0) return null;
+    return el("div.budget__chart", null, items.map(function (s) {
+      return el("div.budget__row", null, [
+        el("span.budget__rowlabel", { text: s.label }),
+        el("span.budget__track", null, [
+          el("span.budget__fill", { style: { width: Math.max(2, s.value / max * 100) + "%" } })
+        ]),
+        el("span.budget__rowval", { text: M.format(s.value, currency) })
+      ]);
+    }));
+  }
+
   function budgetBanner(b, currency, label, homeCur) {
     if (!b || b.total <= 0) return null;
     var M = TP.money;
-    // 카테고리별 칩 + 예상 교통비 (빌트인 + 커스텀, 합계 표시)
-    var catParts = [], seen = {};
-    allCats().forEach(function (c) { if (b.byCat[c[0]] > 0) { catParts.push(el("span.bg-chip", { text: c[1] + " " + M.format(b.byCat[c[0]], currency) })); seen[c[0]] = 1; } });
-    Object.keys(b.byCat).forEach(function (k) { if (!seen[k] && b.byCat[k] > 0) catParts.push(el("span.bg-chip", { text: catLabel(k) + " " + M.format(b.byCat[k], currency) })); });   // 삭제된 커스텀 분류도 누락 없이
-    if (b.transport > 0) catParts.push(el("span.bg-chip", { text: "🚌 교통(예상) " + M.format(b.transport, currency) }));
+    var items = budgetItems(b);
     // 결제수단 줄
     var pay = [];
     if (b.byPay.credit > 0) pay.push("신용 " + M.format(b.byPay.credit, currency));
@@ -432,7 +464,7 @@
           conv ? el("span.budget__conv", { text: conv }) : null
         ])
       ]),
-      catParts.length ? el("div.budget__parts", null, catParts) : null,
+      budgetChart(items, currency),
       pay.length ? el("div.budget__pay", { text: "💳 결제: " + pay.join(" · ") }) : null
     ]);
   }

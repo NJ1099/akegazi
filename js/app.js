@@ -333,20 +333,49 @@
 
       function cleanup() {
         dragging = false;
+        if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
         document.removeEventListener("pointermove", onMove);
         document.removeEventListener("pointerup", onUp);
         document.removeEventListener("pointercancel", onUp);
       }
       // 드래그 중 도착한 비동기 갱신은 순서를 저장한 뒤에 반영한다(먼저 그리면 저장이 무산된다).
       function flushPending() { if (pendingRender) { pendingRender = false; render(); } }
+      // 이동 처리는 프레임당 1회로 묶는다. pointermove 는 120Hz 기기에서 초당 120회 오는데,
+      // 그때마다 항목 전부의 getBoundingClientRect 를 읽으면(15곳이면 14회) 강제 동기 레이아웃이
+      // 초당 1,600회 넘게 발생한다. 위치는 pointerdown 때 한 번 재고, 실제로 자리가 바뀐 뒤에만 다시 잰다.
+      var mids = null, pendingY = null, rafId = 0;
+      function measure() {
+        mids = Array.prototype.map.call(listEl.querySelectorAll(".tl-item:not(.dragging)"), function (child) {
+          var box = child.getBoundingClientRect();
+          return { el: child, mid: box.top + box.height / 2 };
+        });
+      }
+      function afterCached(y) {
+        if (!mids) measure();
+        var closest = null, closestOffset = -Infinity;
+        for (var i = 0; i < mids.length; i++) {
+          var offset = y - mids[i].mid;
+          if (offset < 0 && offset > closestOffset) { closestOffset = offset; closest = mids[i].el; }
+        }
+        return closest;
+      }
+      function applyMove() {
+        rafId = 0;
+        if (pendingY == null || myEpoch !== epoch || !listEl.isConnected) return;
+        var after = afterCached(pendingY);
+        var changed = false;
+        if (after == null) { if (listEl.lastChild !== item) { listEl.appendChild(item); changed = true; } }
+        else if (after !== item) { listEl.insertBefore(item, after); changed = true; }
+        if (changed) measure();       // 자리가 바뀐 뒤에만 다시 잰다
+      }
       function onMove(ev) {
         if (myEpoch !== epoch || !listEl.isConnected) return;   // 재렌더되면 무시
         moved = true;
-        var after = afterElement(listEl, ev.clientY);
-        if (after == null) { if (listEl.lastChild !== item) listEl.appendChild(item); }
-        else if (after !== item) listEl.insertBefore(item, after);
+        pendingY = ev.clientY;
+        if (!rafId) rafId = requestAnimationFrame(applyMove);
       }
       function onUp() {
+        if (rafId) { cancelAnimationFrame(rafId); rafId = 0; applyMove(); }   // 예약된 마지막 이동을 먼저 반영
         cleanup();
         item.classList.remove("dragging");
         if (!moved || myEpoch !== epoch || !listEl.isConnected) { flushPending(); return; }   // detached/stale → 저장 안 함
@@ -363,17 +392,6 @@
       document.addEventListener("pointercancel", onUp);
     });
   }
-  function afterElement(listEl, y) {
-    var els = Array.prototype.slice.call(listEl.querySelectorAll(".tl-item:not(.dragging)"));
-    var closest = null, closestOffset = -Infinity;
-    els.forEach(function (child) {
-      var box = child.getBoundingClientRect();
-      var offset = y - box.top - box.height / 2;
-      if (offset < 0 && offset > closestOffset) { closestOffset = offset; closest = child; }
-    });
-    return closest;
-  }
-
   /* ---------- 액션 ---------- */
   function optimize(day) {
     var res = geo.optimizeOrder(day.stops);

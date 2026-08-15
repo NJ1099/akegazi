@@ -8,7 +8,7 @@
  *
  *   캐시 무효화가 필요하면 CACHE 이름의 버전을 올린다(예: akegazi-v2).
  */
-var CACHE = "akegazi-v7";
+var CACHE = "akegazi-v8";
 
 /* 앱 셸 프리캐시 — 설치 시 한 번에 담아 둔다.
  * 이유: network-first 는 "한 번이라도 받아본" 리소스만 캐시에 남는다. 여행 앱은 비행기 모드/

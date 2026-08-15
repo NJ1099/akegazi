@@ -77,6 +77,22 @@
     return box;
   }
 
+  /* 동선 지도 인스턴스 풀 —
+   * app.js 의 render()는 화면을 통째로 다시 만든다. 그때마다 new google.maps.Map 을 만들면
+   * "지도 탭을 누른 횟수"만큼 Dynamic Maps 로 과금된다(타임라인↔지도 3회 왕복 = 지도 3개).
+   * 지도는 자기 DOM 노드에 붙어 있을 뿐이라, 그 노드를 우리가 소유해 두면 떼었다 붙여도 살아 있다.
+   * 그래서 캔버스 노드 하나를 재사용하고, 매번 바뀌는 것(마커·경로)만 지웠다 다시 그린다. */
+  var pool = null;   // { el, map, markers[], line, iw }
+
+  function clearOverlays(p) {
+    p.markers.forEach(function (m) {
+      try { google.maps.event.clearInstanceListeners(m); m.setMap(null); } catch (e) {}
+    });
+    p.markers = [];
+    if (p.line) { try { p.line.setMap(null); } catch (e) {} p.line = null; }
+    if (p.iw) { try { p.iw.close(); } catch (e) {} }
+  }
+
   /* 동선 지도: stops(좌표 있는 것만 번호 매김) → 핸들 즉시 반환(맵은 비동기 생성) */
   function renderRoute(container, stops, opts) {
     opts = opts || {};
@@ -94,7 +110,20 @@
       if (handle.destroyed || !container.isConnected) return;
       var bounds = new google.maps.LatLngBounds();
       geoStops.forEach(function (s) { bounds.extend({ lat: s.lat, lng: s.lon }); });
-      var map = new maps.Map(container, baseOptions({ center: bounds.getCenter(), zoom: 13, gestureHandling: "cooperative" }));
+
+      if (!pool) {
+        var canvas = document.createElement("div");
+        canvas.className = "gmap-canvas";
+        pool = { el: canvas, map: null, markers: [], line: null, iw: null };
+      }
+      if (pool.el.parentNode !== container) container.appendChild(pool.el);   // 이전 컨테이너에서 옮겨 옴
+      if (!pool.map) {
+        pool.map = new maps.Map(pool.el, baseOptions({ center: bounds.getCenter(), zoom: 13, gestureHandling: "cooperative" }));
+      } else {
+        clearOverlays(pool);
+        try { google.maps.event.trigger(pool.map, "resize"); } catch (e) {}   // 다시 붙은 뒤 크기 재계산
+      }
+      var map = pool.map;
       handle.map = map;
 
       var path = [];
@@ -102,10 +131,15 @@
         var pos = { lat: s.lat, lng: s.lon };
         path.push(pos);
         var marker = new google.maps.Marker({ position: pos, map: map, icon: pinIcon(i + 1, color), title: (i + 1) + ". " + (s.title || "장소"), zIndex: 1000 - i });
-        var iw = new google.maps.InfoWindow({ content: popupNode(s, i + 1) });
-        marker.addListener("click", function () { iw.open({ anchor: marker, map: map }); });
+        // 말풍선은 클릭할 때 하나만 만들어 돌려 쓴다(열어 보지도 않을 N개를 미리 만들지 않는다)
+        marker.addListener("click", function () {
+          if (!pool.iw) pool.iw = new google.maps.InfoWindow();
+          pool.iw.setContent(popupNode(s, i + 1));
+          pool.iw.open({ anchor: marker, map: map });
+        });
+        pool.markers.push(marker);
       });
-      if (path.length > 1) dashedLine(path, color).setMap(map);
+      if (path.length > 1) { pool.line = dashedLine(path, color); pool.line.setMap(map); }
       map.fitBounds(bounds, 44);
       if (path.length === 1) { map.setCenter(path[0]); map.setZoom(15); }
     }).catch(function () { if (!handle.destroyed) fail(container, "지도를 불러오지 못했어요."); });
@@ -150,12 +184,15 @@
     return wrapper;
   }
 
-  /* 무효화: 구글맵은 컨테이너 제거 시 GC되므로 플래그만 세워 비동기 stale 생성을 막는다. */
+  /* 무효화: 플래그를 세워 비동기 stale 생성을 막는다.
+   * 동선 지도는 파괴하지 않는다 — 캔버스 노드가 화면에서 떨어질 뿐이고, 다음 표시 때 그대로 재사용된다.
+   * 붙어 있던 마커·경로만 정리해 옛 날짜의 핀이 다음 지도에 남지 않게 한다. */
   function destroy(h) {
     if (!h) return;
     try {
-      if (h.setView && h.map) h.map.destroyed = true;   // picker wrapper { map: handle, setView }
-      else h.destroyed = true;                           // renderRoute handle
+      if (h.setView && h.map) { h.map.destroyed = true; return; }   // picker wrapper { map: handle, setView }
+      h.destroyed = true;                                           // renderRoute handle
+      if (pool && pool.map) clearOverlays(pool);
     } catch (e) {}
   }
 

@@ -107,7 +107,7 @@
     opts = opts || {};
     var ctl = ("AbortController" in window) ? new AbortController() : null;
     var to = setTimeout(function () { if (ctl) ctl.abort(); }, opts.timeout || 9000);
-    return fetch(url, { signal: ctl ? ctl.signal : undefined, headers: opts.headers })
+    return fetch(url, { signal: ctl ? ctl.signal : undefined, headers: opts.headers, method: opts.method || "GET", body: opts.body })
       .then(function (r) {
         clearTimeout(to);
         if (!r.ok) throw new Error("HTTP " + r.status);

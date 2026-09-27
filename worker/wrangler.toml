@@ -1,0 +1,16 @@
+#:schema https://unpkg.com/wrangler/config-schema.json
+# 어케가지 — 인스타 장소 찾기 · 장소명 변환 중계 Worker
+#
+# 배포 (이 폴더에서):
+#   npx wrangler deploy
+#   npx wrangler secret put ANTHROPIC_API_KEY   ← 키는 직접 붙여넣을 것(파일·채팅에 쓰지 않는다)
+#
+# 이 파일은 공개 repo 에 올라간다. 비밀 값을 절대 여기 적지 말 것.
+
+name = "akegazi-insta"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+
+[vars]
+# 허용 사이트(쉼표 구분). localhost 는 로컬 확인용.
+ALLOWED_ORIGINS = "https://nj1099.github.io,http://localhost:4701"

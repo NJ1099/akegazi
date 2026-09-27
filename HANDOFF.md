@@ -164,6 +164,18 @@
 
 **검증** — 문법 검사 전 파일 통과, 브라우저 실측: 인스타 버튼·모달·Worker 미설정 안내 · 결과 목록 렌더(카테고리 이모지·"추정" 배지·구글맵 링크) · **로컬 포트는 리퍼러로 막혀 `RefererNotAllowedMapError` → OSM 지도로 실제 전환, 번호 핀 7개**. 실제 Worker 호출(Claude 분석)은 Worker 미배포라 **검증 못 함**.
 
+### 14차 (Worker 배포 · 인스타 장소 → 여행에 담기 · 한글 장소명 검색 복구) — 2026-09-27
+
+🔴 **지금 배포판은 구글이 전부 막혀 있다 — 원인은 구글 클라우드 결제 중지**(`BillingNotEnabledMapError`, Places 는 `PERMISSION_DENIED: The caller does not have permission`). 리퍼러는 통과한다(타 도메인은 `API_KEY_HTTP_REFERRER_BLOCKED` 로 다르게 거부됨 — 구분 근거). 13차의 자동 전환 덕에 지도는 OSM 으로 정상이지만 **검색은 OSM 뿐이라 한글 음역명이 0건**이었다("그랜드 센터 포인트 룸피니 방콕" 0건 / "Grande Centre Point Lumphini" 적중 — 사용자 제보 "태국 호텔 검색하면 안 나온다"). 결제를 되살리면 구글 검색으로 돌아온다(1시간 기억 후).
+
+1. **Worker 배포** — `worker/wrangler.toml`(이름 `akegazi-insta`) → **https://akegazi-insta.kado-alert-bot.workers.dev** . ⚠️ 이 PC 의 wrangler 인증은 **kado-alert-bot 폴더에서만 잡힌다**(그 폴더 `.env` 의 토큰) — 배포는 `cd E:/AI/kado-alert-bot && npx wrangler deploy --config ../akegazi-main/worker/wrangler.toml`. 🔴 **`ANTHROPIC_API_KEY` 시크릿은 사용자가 직접 넣어야 한다**(같은 방식으로 `npx wrangler secret put ANTHROPIC_API_KEY --config ../akegazi-main/worker/wrangler.toml`). 없으면 Worker 가 500 "ANTHROPIC_API_KEY가 설정되지 않았어요" 를 준다.
+2. **`POST /name`** (Worker) — 한글 장소명 → OSM 검색용 영문/현지어 이름 최대 3개(Haiku 4.5). `geo.geocode` 가 **구글·OSM 모두 0건일 때만** 부른다(`aiNameGeocode` — 한글 포함 4자 이상, 세션 캐시). 편집창 검색·인스타 담기 모두 이 한 벌을 탄다.
+3. **인스타 결과 → 여행에 담기** (`insta.js`) — "담을 날짜" 셀렉트(모든 여행의 날짜, 지금 여행 먼저) + 줄마다 ＋ + "전부 여행에 담기". 날짜 맨 뒤에 붙이고(카테고리 → 종류: 숙소=lodging·카페=cafe·식당/바=food·체험/스파=activity·그 외 attraction) `name + area` 로 위치를 찾아 좌표·주소·영업시간을 채운다 → **지도 번호 핀**. 위치 찾기는 **순차 큐**(Nominatim 초당 1회). 담은 뒤 "📅 담은 날짜 일정 보기". 여행이 하나도 없으면 담기 UI 없이 구글맵 링크만.
+4. `util.fetchJSON` 이 `method`·`body` 를 받게 했다(기존 GET 호출 영향 없음). **sw.js CACHE v9→v10**.
+
+**검증** — 로컬 브라우저: 방콕 3곳(그랜드 센터 포인트 룸피니·왓 아룬·조드페어) 전부 담기 → 좌표 3/3 · 종류(lodging/attraction) · 지도 핀 1·2·3 · 일정 보기 이동. Worker: 허용 외 Origin 403 · 키 없음 500 확인. **Claude 호출(사진 분석·이름 변환)은 키 입력 전이라 미검증.**
+⚠️ **태국 바트(THB)가 통화 목록에 없다**(`money.js::CUR` 는 JPY/KRW/USD/EUR 뿐) — 방콕 여행 예산이 엔(¥)으로 보인다. 미처리.
+
 ## 알려진 제약 / TODO
 - **정확한 구글 교통비는 'Distance Matrix API' 필요** — 키에 그 API를 추가 허용해야 실거리·실제 대중교통 요금 반영. 미허용이면 직선×1.4 추정(공항 좌표는 채워지므로 기본요금 버그는 해소).
 - **환율은 일 단위 참고치** — open.er-api.com(무료) 기준, API 실패 시 하드코딩 폴백 근사. `≈` 표시로 참고용임을 명시.

@@ -746,3 +746,19 @@ iframe.day-map { border: 0; display: block; }
 .lmap-dark { filter: invert(1) hue-rotate(180deg) brightness(.92) contrast(.9) saturate(.7); }
 .leaflet-bar a, .leaflet-bar a:hover { background: var(--surface); color: var(--text); border-bottom-color: var(--line-strong); }
 .leaflet-bar { border: 1px solid var(--line-strong) !important; box-shadow: none !important; }
+
+/* 인스타 → 여행에 담기 */
+.ig-addbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0 12px; }
+.ig-addbar__label { font-size: 12px; font-weight: 800; color: var(--text-2); }
+.ig-addbar .select { flex: 1; min-width: 0; }
+.ig-addbar .btn { flex: 1 1 100%; }
+.ig-row { display: flex; align-items: stretch; gap: 8px; margin-bottom: 8px; }
+.ig-row .ig-place { flex: 1; min-width: 0; margin-bottom: 0; }
+.ig-add {
+  flex: 0 0 auto; width: 48px; border-radius: var(--radius-sm); border: 1px solid var(--brand);
+  background: var(--brand-soft); color: var(--text); font-size: 20px; font-weight: 800; cursor: pointer;
+}
+.ig-add:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--brand-soft); }
+.ig-add.is-done { border-color: var(--line-strong); background: var(--surface); color: var(--c-green, #34d399); cursor: default; }
+.ig-gobar:empty { display: none; }
+.ig-gobar { margin-top: 10px; }

@@ -1,6 +1,7 @@
 /* worker.js — 어케가지 "인스타에서 장소 찾기" 중계 서버 (Cloudflare Worker)
  *
  * 브라우저 → (사진 base64 + 캡션) → 이 Worker → Claude API → 장소 JSON → 브라우저
+ * POST /name {q, region} → {queries:[…]} : 한글 장소명을 OSM 검색용 영문/현지어 이름으로 바꾼다.
  * Claude API 키는 Worker 비밀 변수(ANTHROPIC_API_KEY)에만 둔다.
  *
  * 환경 변수 (Cloudflare 대시보드 → Worker → Settings → Variables and Secrets)
@@ -46,6 +47,10 @@ export default {
 
     let body;
     try { body = await req.json(); } catch { return json({ error: "요청 형식이 올바르지 않아요" }, 400); }
+
+    // 장소 이름 → 지도 검색용 이름. 구글 검색이 막혀 OSM 으로 찾을 때 한글 이름("그랜드 센터 포인트 룸피니")은
+    // 0건이라, 현지/영문 공식명으로 바꿔 돌려준다. 짧은 작업이라 작은 모델을 쓴다.
+    if (new URL(req.url).pathname === "/name") return nameLookup(body, env, json);
 
     const images = (Array.isArray(body.images) ? body.images : [])
       .slice(0, MAX_IMAGES)
@@ -106,3 +111,43 @@ export default {
     return json({ places });
   },
 };
+
+const NAME_SYSTEM = `너는 여행 장소 이름을 OpenStreetMap 검색어로 바꾸는 도우미야.
+입력된 장소(한국어 음역·줄임말·오타일 수 있음)의 공식 명칭을 영문으로, 그리고 현지어가 로마자가 아니면 현지어로도 적어.
+각 검색어 끝에 도시 이름(영문)을 붙여. 모르는 곳이면 추측한 표기를 쓰되 최대 3개까지만.
+JSON 문자열 배열만 출력해. 예: ["Grande Centre Point Lumpini Bangkok", "แกรนด์ เซนเตอร์ พอยต์ ลุมพินี"]`;
+
+async function nameLookup(body, env, json) {
+  const q = String(body.q || "").trim().slice(0, 120);
+  const region = String(body.region || "").trim().slice(0, 60);
+  if (!q) return json({ queries: [] });
+  let r;
+  try {
+    r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: JSON.stringify({
+        model: env.NAME_MODEL || "claude-haiku-4-5-20251001",
+        max_tokens: 200,
+        system: NAME_SYSTEM,
+        messages: [{ role: "user", content: `장소: ${q}${region ? `\n여행 지역: ${region}` : ""}` }],
+      }),
+    });
+  } catch {
+    return json({ error: "Claude API에 연결하지 못했어요" }, 502);
+  }
+  if (!r.ok) {
+    console.log("anthropic error", r.status, (await r.text().catch(() => "")).slice(0, 300));
+    return json({ error: `분석 서버 오류 (${r.status})` }, 502);
+  }
+  const data = await r.json();
+  const text = (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
+  const m = text.match(/\[[\s\S]*\]/);
+  let arr = [];
+  try { arr = m ? JSON.parse(m[0]) : []; } catch { arr = []; }
+  const queries = (Array.isArray(arr) ? arr : [])
+    .map((s) => String(s == null ? "" : s).trim().slice(0, 120))
+    .filter(Boolean)
+    .slice(0, 3);
+  return json({ queries });
+}

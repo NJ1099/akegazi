@@ -73,6 +73,9 @@
       p = keylessGeocode(query);
     }
     p = p.then(function (list) {
+      return (list && list.length) ? list : aiNameGeocode(query);   // 전부 0건 → 이름을 바꿔 한 번 더
+    });
+    p = p.then(function (list) {
       if (list && list.length) { geoMem[k] = { _t: Date.now(), v: list }; geoSave(); }   // 무결과·실패는 캐시하지 않음
       return list;
     });
@@ -156,6 +159,34 @@
       return omFallback(query);
     }).catch(function () { return omFallback(query); });
   }
+  /* 마지막 폴백: 이름 바꿔 다시 찾기.
+   * 구글 검색이 막히면(결제 중지 등) OSM 만 남는데, OSM 은 "그랜드 센터 포인트 룸피니 방콕" 같은
+   * 한글 음역 이름을 0건으로 돌려준다(영문 "Grande Centre Point Lumpini" 는 찾는다 — 2026-09-27 실측).
+   * Worker(Claude)에게 영문/현지어 공식명을 받아 OSM 으로 다시 찾는다.
+   * 타이핑 중 접두어마다 부르지 않도록 한글이 섞인 4자 이상만, 결과(0건 포함)는 세션 동안 기억한다. */
+  var aiMem = {};
+  function aiNameGeocode(query) {
+    var worker = ((window.TP_CONFIG || {}).INSTA_WORKER_URL || "").trim();
+    if (!worker || !/[가-힣]/.test(query) || query.replace(/\s/g, "").length < 4) return Promise.resolve([]);
+    var k = geoKey(query);
+    if (aiMem[k]) return aiMem[k];
+    var t = TP.store && TP.store.activeTrip && TP.store.activeTrip();
+    var region = (t && t.region) || "";
+    aiMem[k] = fetchJSON(worker.replace(/\/$/, "") + "/name", {
+      timeout: 15000,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ q: query, region: region })
+    }).then(function (j) {
+      var qs = (j && Array.isArray(j.queries)) ? j.queries : [];
+      // 후보를 차례로(Nominatim 은 초당 1회 정책) — 첫 적중에서 멈춘다
+      return qs.reduce(function (acc, q2) {
+        return acc.then(function (found) { return found.length ? found : keylessGeocode(q2); });
+      }, Promise.resolve([]));
+    }).catch(function () { delete aiMem[k]; return []; });
+    return aiMem[k];
+  }
+
   function shortName(r) {
     if (r.namedetails && r.namedetails.name) return r.namedetails.name;
     if (r.name) return r.name;

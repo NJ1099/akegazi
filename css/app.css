@@ -762,3 +762,6 @@ iframe.day-map { border: 0; display: block; }
 .ig-add.is-done { border-color: var(--line-strong); background: var(--surface); color: var(--c-green, #34d399); cursor: default; }
 .ig-gobar:empty { display: none; }
 .ig-gobar { margin-top: 10px; }
+
+/* 여행 편집 — 현재 환율 한 줄 */
+.rate-line { min-height: 18px; margin-top: 8px; font-size: 13px; font-weight: 700; color: var(--text-2); }

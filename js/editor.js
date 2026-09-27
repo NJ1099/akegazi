@@ -570,35 +570,33 @@
       var titleInput = el("input.input", { value: f.title, placeholder: "예: 후쿠오카 가족여행", oninput: function () { f.title = this.value; } });
       box.appendChild(field("여행 이름", titleInput));
 
-      var curWrap = el("div.chips");
-      function renderCurChips() {
-        curWrap.innerHTML = "";
-        TP.money.ORDER.forEach(function (code) {
-          var c = TP.money.cfg(code);
-          curWrap.appendChild(el("button.chip" + (f.currency === code ? ".is-on" : ""), {
-            type: "button", onclick: function () { f.currency = code; userPickedCur = true; renderCurChips(); }
-          }, [c.sym + " " + c.name]));
+      // 통화가 26개라 칩으로는 화면을 덮는다 → 선택 목록. 고르면 현재 환율 한 줄을 바로 보여 준다.
+      function curOption(code) { var c = TP.money.cfg(code); return el("option", { value: code, text: c.sym.trim() + "  " + c.name + " (" + code + ")" }); }
+      var curSelect = el("select.select", { "aria-label": "통화", onchange: function () { f.currency = this.value; userPickedCur = true; showRate(); } },
+        TP.money.ORDER.map(curOption));
+      curSelect.value = f.currency;
+      var homeSelect = el("select.select", { "aria-label": "내 통화", onchange: function () { f.homeCurrency = this.value; showRate(); } },
+        [el("option", { value: "", text: "없음 (환산 안 함)" })].concat(TP.money.ORDER.map(curOption)));
+      homeSelect.value = f.homeCurrency || "";
+      var rateLine = el("div.rate-line", { role: "status", "aria-live": "polite" });
+      var rateEpoch = 0;
+      function showRate() {
+        var from = f.currency, to = f.homeCurrency, my = ++rateEpoch;
+        if (!to || from === to) { rateLine.textContent = ""; return; }
+        function draw(tag) { if (my !== rateEpoch) return; rateLine.textContent = TP.money.rateLabel(from, to) + tag; }
+        draw(TP.money.getCachedRate(from, to) != null ? " · 실시간" : " · 근사치(조회 중…)");
+        TP.money.ensureRate(from, to).then(function () {
+          draw(TP.money.getCachedRate(from, to) != null ? " · 실시간" : " · 근사치(오프라인)");
         });
       }
       var regionInput = el("input.input", {
-        value: f.region, placeholder: "예: 후쿠오카 / 오사카 / 서울",
-        oninput: function () { f.region = this.value; if (!userPickedCur) { var rec = TP.money.currencyForRegion(f.region); if (rec) { f.currency = rec; renderCurChips(); } } }
+        value: f.region, placeholder: "예: 방콕 / 오사카 / 다낭",
+        oninput: function () { f.region = this.value; if (!userPickedCur) { var rec = TP.money.currencyForRegion(f.region); if (rec) { f.currency = rec; curSelect.value = rec; showRate(); } } }
       });
       box.appendChild(field("지역", regionInput, "지역을 넣으면 통화를 자동 추천해요"));
-      renderCurChips();
-      box.appendChild(field("통화", curWrap));
-
-      var homeWrap = el("div.chips");
-      function renderHomeChips() {
-        homeWrap.innerHTML = "";
-        homeWrap.appendChild(el("button.chip" + (!f.homeCurrency ? ".is-on" : ""), { type: "button", onclick: function () { f.homeCurrency = ""; renderHomeChips(); } }, ["없음"]));
-        TP.money.ORDER.forEach(function (code) {
-          var c = TP.money.cfg(code);
-          homeWrap.appendChild(el("button.chip" + (f.homeCurrency === code ? ".is-on" : ""), { type: "button", onclick: function () { f.homeCurrency = code; renderHomeChips(); } }, [c.sym + " " + c.name]));
-        });
-      }
-      renderHomeChips();
-      box.appendChild(field("내 통화 (환산 표시)", homeWrap, "통화와 다르면 금액 옆에 ≈ 환산값을 보여줘요(실시간 환율)"));
+      box.appendChild(field("통화", curSelect));
+      box.appendChild(field("내 통화 (환산 표시)", el("div", null, [homeSelect, rateLine]), "통화와 다르면 금액 옆에 ≈ 환산값을 보여줘요(실시간 환율)"));
+      showRate();
 
       if (!existing) {
         box.appendChild(field("", el("div.row", null, [

@@ -164,7 +164,10 @@
         trip.region ? el("span", { text: "📍 " + trip.region }) : null,
         el("span", { text: range || "날짜를 추가해 일정을 시작하세요" }),
         trip.days.length ? el("span", { text: "· " + trip.days.length + "일 · " + totalStops + "곳" }) : null,
-        el("span", { text: "· " + TP.money.cfg(trip.currency).sym + " " + TP.money.cfg(trip.currency).name })
+        el("span", { text: "· " + TP.money.cfg(trip.currency).sym.trim() + " " + TP.money.cfg(trip.currency).name }),
+        // 현재 환율(실측을 받으면 ensureFx 가 다시 그려 실값으로 바뀐다)
+        (trip.homeCurrency && trip.homeCurrency !== trip.currency)
+          ? el("span", { text: "· " + TP.money.rateLabel(trip.currency, trip.homeCurrency) }) : null
       ])
     ]));
     ensureFx(trip);

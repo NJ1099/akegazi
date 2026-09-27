@@ -243,31 +243,68 @@ async function analyzeLink(body, env) {
   if (!m) throw fail("인스타 게시물 링크가 아니에요 (instagram.com/p/… 형식)", 400);
   const clean = `https://www.instagram.com/${m[1] === "reels" ? "reel" : m[1]}/${m[2]}/`;
 
-  let html = "";
-  try {
-    const r = await fetch(clean, { headers: { "User-Agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)", "Accept-Language": "ko,en;q=0.8" } });
-    if (r.ok) html = await r.text();
-  } catch {}
+  // 1) 브라우저처럼 요청하면 HTML 안에 캐러셀 전체(carousel_media)가 들어 있다(2026-09-28 실측 — 크롬 UA 에
+  //    sec-fetch 헤더가 있어야 한다. UA 만 크롬이거나 헤더만 있으면 1MB 대신 64만 자짜리 빈 껍데기가 온다).
+  // 2) 그게 막히면(출구 IP 에 따라 들쭉날쭉하다) 크롤러용 og 태그로 캡션 + 표지 1장.
+  const getHtml = (headers) => fetch(clean, { headers }).then((r) => (r.ok ? r.text() : ""), () => "");
+  let html = await getHtml({
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
+    "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document", "Sec-Fetch-Site": "none",
+  });
+  let photoUrls = carouselUrls(html);
+  let via = photoUrls.length ? "carousel" : "";
+  if (!metaContent(html, "og:description") && !photoUrls.length) {
+    html = await getHtml({ "User-Agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)", "Accept-Language": "ko,en;q=0.8" });
+  }
   // og:description = '1,240 likes, 22 comments - 계정 on 날짜: "캡션"' → 따옴표 안만
   const desc = metaContent(html, "og:description") || metaContent(html, "og:title");
   const cap = (desc.match(/:\s*"([\s\S]*)"\s*\.?\s*$/) || [null, desc])[1].trim();
-  const cover = metaContent(html, "og:image");
-  if (!cap && !cover) throw fail("게시물을 읽지 못했어요(비공개이거나 인스타가 막았어요). 사진을 캡처해서 올려 주세요", 502);
-
-  const images = [];
-  if (cover && /^https:\/\/[\w.-]+\.(cdninstagram\.com|fbcdn\.net)\//.test(cover)) {
-    try {
-      const ir = await fetch(cover);
-      const type = (ir.headers.get("content-type") || "image/jpeg").split(";")[0];
-      if (ir.ok && IMAGE_TYPES.includes(type)) {
-        const buf = await ir.arrayBuffer();
-        if (buf.byteLength < 3 * 1024 * 1024) images.push({ type, data: toBase64(buf) });
-      }
-    } catch {}
+  if (!photoUrls.length) {
+    const cover = metaContent(html, "og:image");
+    if (cover) { photoUrls = [cover]; via = "cover"; }
   }
+  if (!cap && !photoUrls.length) throw fail("게시물을 읽지 못했어요(비공개이거나 인스타가 막았어요). 사진을 캡처해서 올려 주세요", 502);
+
+  // 인스타 이미지 서버 주소만 받는다(다른 주소를 서버가 대신 열지 않게)
+  const okHost = (x) => /^https:\/\/[\w.-]+\.(cdninstagram\.com|fbcdn\.net)\//.test(x);
+  const fetched = await Promise.all(photoUrls.filter(okHost).slice(0, MAX_IMAGES).map(async (src) => {
+    try {
+      const ir = await fetch(src);
+      const type = (ir.headers.get("content-type") || "image/jpeg").split(";")[0];
+      if (!ir.ok || !IMAGE_TYPES.includes(type)) return null;
+      const buf = await ir.arrayBuffer();
+      return buf.byteLength < 3 * 1024 * 1024 ? { type, data: toBase64(buf) } : null;
+    } catch { return null; }
+  }));
+  const images = fetched.filter(Boolean);
   const out = await analyzePost({ images, caption: cap }, env);
-  out.link = { url: clean, caption: cap.slice(0, 500), imagesFromLink: images.length };
+  out.link = { url: clean, caption: cap.slice(0, 500), imagesFromLink: images.length, photosInPost: photoUrls.length, via };
   return out;
+}
+
+/* HTML 안 첫 "carousel_media":[ … ] 를 괄호 짝으로 잘라 JSON 으로 읽고 사진마다 주소 하나(가로 1080 에 가까운 것).
+ * 문자열 안의 괄호·따옴표는 건너뛴다. 사진 1장짜리 게시물엔 이 배열이 없다 → [] (og:image 표지로 간다). */
+function carouselUrls(html) {
+  const key = '"carousel_media":[';
+  const i = html.indexOf(key);
+  if (i < 0) return [];
+  let j = i + key.length - 1, depth = 0, inStr = false;
+  for (; j < html.length; j++) {
+    const c = html[j];
+    if (inStr) { if (c === "\\") j++; else if (c === '"') inStr = false; continue; }
+    if (c === '"') inStr = true;
+    else if (c === "[" || c === "{") depth++;
+    else if (c === "]" || c === "}") { depth--; if (depth === 0) break; }
+  }
+  let arr;
+  try { arr = JSON.parse(html.slice(i + key.length - 1, j + 1)); } catch { return []; }
+  return (Array.isArray(arr) ? arr : []).map((m) => {
+    const cands = (m && m.image_versions2 && m.image_versions2.candidates) || [];
+    const pick = cands.slice().sort((a, b) => Math.abs((a.width || 0) - 1080) - Math.abs((b.width || 0) - 1080))[0];
+    return (pick && pick.url) || (m && m.display_uri) || "";
+  }).filter(Boolean);
 }
 
 async function nameLookup(body, env) {

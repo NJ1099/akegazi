@@ -317,13 +317,16 @@
           if (url && !/instagram\.com\//i.test(url)) { U.toast("인스타 게시물 링크를 넣어주세요"); return; }
           if (!shots.length && !caption && !url) { U.toast("링크·사진·캡션 중 하나를 넣어주세요"); return; }
           busy = true; goBtn.disabled = true;
-          status.textContent = shots.length ? "🔎 사진 " + shots.length + "장을 읽고 있어요… (10~30초)" : "🔎 게시물을 읽고 있어요… (5~15초)";
+          status.textContent = shots.length ? "🔎 사진 " + shots.length + "장을 읽고 있어요… (10~30초)" : "🔎 게시물의 사진을 모두 읽고 있어요… (10~30초)";
           analyze(shots, caption, url).then(function (res) {
             var places = res.places;
             saveLast(places);
             var notes = [];
-            // 링크만 넣었으면 첫 사진·캡션만 읽은 것이다 — 여러 장짜리 게시물은 캡처가 필요하다고 알려 준다
-            if (res.link && !shots.length) notes.push("링크로는 첫 사진과 캡션만 읽을 수 있어요. 사진을 넘겨 보는 게시물이면 각 사진을 캡처해서 함께 올려 주세요.");
+            // 링크는 보통 넘겨 보는 사진 전체를 읽는다(via "carousel"). 인스타가 목록을 막으면 표지 1장만(via "cover") —
+            // 그때만 캡처를 함께 올려 달라고 알려 준다
+            var lk = res.link;
+            if (lk && lk.via === "carousel") notes.push("📸 게시물 사진 " + lk.imagesFromLink + "장을 모두 읽었어요.");
+            else if (lk && !shots.length) notes.push("링크로는 첫 사진과 캡션만 읽었어요(인스타가 사진 목록을 막았어요). 사진을 넘겨 보는 게시물이면 각 사진을 캡처해서 함께 올려 주세요.");
             if (res.partialError) notes.push("일부는 읽지 못했어요: " + res.partialError);
             status.textContent = notes.join(" ");
             renderResults(results, places, "찾은 장소", makeCtx);

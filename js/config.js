@@ -14,3 +14,8 @@
  */
 window.TP_CONFIG = window.TP_CONFIG || {};
 window.TP_CONFIG.GOOGLE_MAPS_API_KEY = "AIzaSyCmy-1bxr29Et7FFTQuCNR_w9XIxW_R1bc";
+
+/* INSTA_WORKER_URL: 인스타 스크린샷 → 장소 찾기 기능이 호출하는 Cloudflare Worker 주소.
+ *   worker/worker.js 를 배포하고 받은 주소(예: https://akegazi-insta.<계정>.workers.dev)를 넣는다.
+ *   Claude API 키는 Worker의 비밀 변수에만 있고 이 파일에는 넣지 않는다. 비워두면 기능이 안내 문구만 보인다. */
+window.TP_CONFIG.INSTA_WORKER_URL = "";

@@ -120,7 +120,8 @@
       ]));
       viewEl.appendChild(el("div", { style: { marginTop: "18px" } }, [
         el("button.btn.btn--block", { onclick: newTrip }, ["+ 새 여행"]),
-        el("button.btn.btn--block.btn--ghost", { style: { marginTop: "10px" }, onclick: loadSample }, ["✨ 예시(오사카 3일) 불러오기"])
+        el("button.btn.btn--block.btn--ghost", { style: { marginTop: "10px" }, onclick: loadSample }, ["✨ 예시(오사카 3일) 불러오기"]),
+        el("button.btn.btn--block.btn--ghost", { style: { marginTop: "10px" }, onclick: function () { TP.insta.open(); } }, ["📸 인스타에서 장소 찾기"])
       ]));
       return;
     }
@@ -143,6 +144,7 @@
     });
 
     viewEl.appendChild(el("button.btn.btn--block", { style: { marginTop: "6px" }, onclick: newTrip }, ["+ 새 여행"]));
+    viewEl.appendChild(el("button.btn.btn--block.btn--ghost", { style: { marginTop: "10px" }, onclick: function () { TP.insta.open(); } }, ["📸 인스타에서 장소 찾기"]));
   }
 
   /* ---------- 여행: 날짜 목록 ---------- */
@@ -442,7 +444,7 @@
   function toggleMenu(anchor) {
     if (U.$("#appbarMenu")) { closeMenu(); return; }
     var route = parseHash();
-    var items = [];
+    var items = [["📸 인스타에서 장소 찾기", function () { TP.insta.open(); }]];
     if (route.name === "home") {
       items.push(["📥 가져오기 (JSON)", function () { U.$("#fileInput").click(); }]);
       items.push(["🗑 전체 지우기", clearAll]);

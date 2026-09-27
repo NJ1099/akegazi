@@ -2,7 +2,7 @@
 
 > 다음 세션에서 이어서 작업할 때 가장 먼저 읽어야 하는 문서. 앱 표시명은 **어케가지**, repo/폴더는 `akegazi`.
 
-최종 업데이트: 2026-08-15
+최종 업데이트: 2026-09-27
 
 ## ⚙️ 작업 워크플로 규칙 (사용자 지시 · 항상 준수)
 - **유의미한 수정을 하면 곧바로 커밋·푸시한다** — 검증(테스트/스모크)이 끝나는 즉시 한국어 커밋 메시지로 커밋 후 `git push origin main`. 사용자가 매번 따로 "커밋해줘"라고 말하지 않아도 진행한다.
@@ -151,6 +151,18 @@
 
 **검증** — Node 로직 32/32 유지, 브라우저 실측(막대 길이가 금액에 정확히 비례 · 지도 캔버스 재사용 · 드래그 rect 0회 · 가로 오버플로 0).
 **⚠️ 로컬 콘솔의 `IntersectionObserver ... not of type 'Element'` 는 우리 버그가 아니다** — 커밋된 이전 버전으로 되돌려도 동일하게 난다. 로컬 포트가 구글 키 리퍼러 허용목록에 없어 지도 초기화가 실패하면서 구글맵 내부에서 나는 부수 에러다(프로덕션에서는 발생하지 않음).
+
+### 13차 (인스타에서 장소 찾기 + 구글 거부 시 OSM 자동 전환) — 2026-09-27
+
+다른 곳(claude.ai)에서 만든 변경을 사용자가 `akegazi.patch` / `akegazi-update.zip`(같은 내용, zip 은 LF 개행)으로 받아 왔고, 패치를 그대로 적용했다. **sw.js CACHE v8→v9**.
+
+1. **📸 인스타에서 장소 찾기** (`js/insta.js` 신규) — 홈 버튼·⋯메뉴에서 연다. 게시물 **스크린샷(최대 10장, 긴 변 1400px JPEG 로 축소) + 캡션**을 `worker/worker.js`(Cloudflare Worker)로 보내면 Worker 가 Claude API 로 장소 JSON(`name·name_ko·area·category·confidence`)을 돌려준다. 목록을 누르면 **구글맵 검색 링크**로 연다(Places 과금 없음). 마지막 결과는 `akegazi.insta.v1` 에 남는다.
+   - ⚠️ **링크가 아니라 스크린샷 입력이다** — 인스타 게시물 URL 은 로그인 벽이라 서버에서 긁을 수 없다.
+   - ⚠️ **찾은 장소는 아직 여행 일정/지도에 담기지 않는다** — 구글맵으로 나가는 링크뿐.
+   - 🔴 **`config.js` 의 `INSTA_WORKER_URL` 이 비어 있어 배포판에서는 안내 문구만 뜬다.** Worker 를 배포하고(시크릿 `ANTHROPIC_API_KEY`, 선택 `ALLOWED_ORIGINS`·`MODEL`) 주소를 넣어야 동작한다. Claude API 키는 **Worker 시크릿에만** — 이 repo 는 PUBLIC 이다.
+2. **구글 거부 시 키리스 대안 자동 전환** (`gmaps.js` 고장 감지 + `maps.js` Leaflet/OSM) — 결제 중지·리퍼러 불허 등으로 구글이 거부하면 범위(maps/places)별로 **1시간 "고장"으로 기억**(`akegazi.gmaps.broken.v1`)하고 지도는 Leaflet+OSM(다크 필터·같은 번호 핀·점선), 검색은 Nominatim 으로 간다. 결제 오류는 콜백이 없어 **`console.error` 를 감싸서** `…MapError` 를 엿본다. 1시간 뒤 또는 `TP.gmaps.resetBroken()` 으로 구글 복귀.
+
+**검증** — 문법 검사 전 파일 통과, 브라우저 실측: 인스타 버튼·모달·Worker 미설정 안내 · 결과 목록 렌더(카테고리 이모지·"추정" 배지·구글맵 링크) · **로컬 포트는 리퍼러로 막혀 `RefererNotAllowedMapError` → OSM 지도로 실제 전환, 번호 핀 7개**. 실제 Worker 호출(Claude 분석)은 Worker 미배포라 **검증 못 함**.
 
 ## 알려진 제약 / TODO
 - **정확한 구글 교통비는 'Distance Matrix API' 필요** — 키에 그 API를 추가 허용해야 실거리·실제 대중교통 요금 반영. 미허용이면 직선×1.4 추정(공항 좌표는 채워지므로 기본요금 버그는 해소).

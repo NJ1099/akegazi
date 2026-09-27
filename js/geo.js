@@ -102,6 +102,11 @@
         if (nm && typeof nm === "object") nm = nm.text || "";   // 혹시 객체로 올 때
         return { name: nm || query, address: p.formattedAddress || "", lat: normLat(lat), lon: normLon(lon), hours: compactHours(p.regularOpeningHours) };
       }).filter(function (r) { return r.lat != null && r.lon != null; });
+    }, function (err) {
+      // 권한·결제 거부는 다시 시도해도 같다 → 기억해 두고 다음 검색부터 바로 키리스로
+      var msg = String((err && err.message) || err || "");
+      if (/PERMISSION_DENIED|REQUEST_DENIED|BILLING|API_KEY|not authorized|not activated/i.test(msg)) TP.gmaps.markBroken("places", msg.slice(0, 80));
+      throw err;
     });
   }
 

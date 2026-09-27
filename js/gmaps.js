@@ -23,16 +23,67 @@
     });
   }
 
+  /* ── 고장 감지 ──
+   * 결제 중지·API 미사용·키 제한 등으로 구글이 거부하면, 지도는 "제대로 로드할 수 없습니다" 창을 띄우고
+   * 검색은 403을 돌려준다. 이때마다 구글을 다시 두드리면 느리고 화면만 깨지므로, 한 번 실패하면
+   * 범위(maps/places)별로 1시간 동안 "고장"으로 기억하고 키리스 대안(OSM 지도·Nominatim 검색)으로 바로 간다.
+   * 결제를 고치면 1시간 뒤(또는 TP.gmaps.resetBroken() 후) 자동으로 구글로 돌아온다. */
+  var BROKEN_KEY = "akegazi.gmaps.broken.v1";
+  var BROKEN_TTL = 60 * 60 * 1000;
+  var broken = (function () {
+    try {
+      var v = JSON.parse(localStorage.getItem(BROKEN_KEY)) || {}, out = {};
+      Object.keys(v).forEach(function (k) { if (v[k] && Date.now() - v[k].t < BROKEN_TTL) out[k] = v[k]; });
+      return out;
+    } catch (e) { return {}; }
+  })();
+  var brokenListeners = [];
+
+  function scopeOf(name) { return name === "places" ? "places" : "maps"; }
+  function isBroken(scope) { return !!broken[scope || "maps"]; }
+  function markBroken(scope, reason) {
+    scope = scope || "maps";
+    if (broken[scope]) return;
+    broken[scope] = { t: Date.now(), reason: String(reason || "error") };
+    try { localStorage.setItem(BROKEN_KEY, JSON.stringify(broken)); } catch (e) {}
+    if (window.console && console.warn) console.warn("[어케가지] 구글 " + scope + " 사용 불가(" + broken[scope].reason + ") → 키리스 대안으로 전환");
+    brokenListeners.slice().forEach(function (l) { if (l.scope === scope) { try { l.fn(broken[scope].reason); } catch (e) {} } });
+    brokenListeners = brokenListeners.filter(function (l) { return l.scope !== scope; });
+  }
+  function onBroken(scope, fn) {
+    if (broken[scope]) { fn(broken[scope].reason); return function () {}; }
+    var l = { scope: scope, fn: fn };
+    brokenListeners.push(l);
+    return function () { brokenListeners = brokenListeners.filter(function (x) { return x !== l; }); };
+  }
+  function resetBroken() { broken = {}; try { localStorage.removeItem(BROKEN_KEY); } catch (e) {} }
+
+  if (KEY) {
+    // 키 인증 실패(잘못된 키·리퍼러 불허) 시 구글이 호출하는 공식 전역 콜백
+    window.gm_authFailure = function () { markBroken("maps", "AuthFailure"); };
+    // 결제 미사용(BillingNotEnabledMapError) 등은 콜백 없이 콘솔 오류로만 알려준다 → 콘솔 오류를 엿봐서 감지
+    var origError = console.error;
+    console.error = function () {
+      try {
+        var m = /Google Maps JavaScript API error: (\w+)/.exec(String(arguments[0] || ""));
+        if (m && /MapError$/.test(m[1])) markBroken("maps", m[1]);
+      } catch (e) {}
+      return origError.apply(console, arguments);
+    };
+  }
+
   // 부트스트랩이 importLibrary를 동기적으로 정의하므로, 키가 있으면 즉시 true.
   function available() {
     return !!(window.google && window.google.maps && window.google.maps.importLibrary);
   }
 
-  // 라이브러리 지연 로드. 키 없거나 로더 미주입이면 reject → 호출부에서 폴백.
+  // 라이브러리 지연 로드. 키 없음·로더 미주입·고장 기억 중이면 reject → 호출부에서 폴백.
   function lib(name) {
     if (!available()) return Promise.reject(new Error("google-maps-unavailable"));
+    if (isBroken(scopeOf(name))) return Promise.reject(new Error("google-" + scopeOf(name) + "-broken"));
     return window.google.maps.importLibrary(name);
   }
 
-  TP.gmaps = { hasKey: hasKey, available: available, lib: lib };
+  TP.gmaps = { hasKey: hasKey, available: available, lib: lib,
+    isBroken: isBroken, markBroken: markBroken, onBroken: onBroken, resetBroken: resetBroken };
 })(window.TP = window.TP || {});

@@ -8,7 +8,7 @@
  *
  *   캐시 무효화가 필요하면 CACHE 이름의 버전을 올린다(예: akegazi-v2).
  */
-var CACHE = "akegazi-v8";
+var CACHE = "akegazi-v9";
 
 /* 앱 셸 프리캐시 — 설치 시 한 번에 담아 둔다.
  * 이유: network-first 는 "한 번이라도 받아본" 리소스만 캐시에 남는다. 여행 앱은 비행기 모드/
@@ -19,7 +19,7 @@ var SHELL = [
   "./", "./index.html", "./manifest.webmanifest", "./css/app.css",
   "./js/config.js", "./js/gmaps.js", "./js/util.js", "./js/store.js", "./js/geo.js",
   "./js/weather.js", "./js/maps.js", "./js/money.js", "./js/render.js", "./js/editor.js",
-  "./js/share.js", "./js/sample.js", "./js/app.js",
+  "./js/share.js", "./js/sample.js", "./js/insta.js", "./js/app.js",
   "./assets/icon-192.png", "./assets/icon-512.png", "./assets/icon-maskable-512.png",
   "./assets/apple-touch-icon.png"
 ];

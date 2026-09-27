@@ -704,3 +704,45 @@ iframe.day-map { border: 0; display: block; }
   * { animation: none !important; transition: none !important; }
   .spin { animation: spin 1.2s linear infinite !important; }  /* 로딩 피드백은 유지 */
 }
+
+/* ---------- 인스타에서 장소 찾기 ---------- */
+.ig-thumbs { display: flex; gap: 8px; overflow-x: auto; padding: 10px 0 2px; }
+.ig-thumbs:empty { display: none; }
+.ig-thumb { position: relative; flex: 0 0 auto; width: 64px; height: 84px; border-radius: var(--radius-sm); overflow: hidden; border: 1px solid var(--line-strong); }
+.ig-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ig-thumb__del {
+  position: absolute; top: 3px; right: 3px; width: 22px; height: 22px; border-radius: 999px;
+  border: 0; background: rgba(7, 11, 20, .78); color: var(--text); font-size: 11px; line-height: 22px; padding: 0;
+}
+.ig-status { min-height: 20px; margin-top: 10px; font-size: 13px; color: var(--text-2); line-height: 1.5; }
+.ig-results { margin-top: 6px; }
+.ig-results__head { display: flex; justify-content: space-between; align-items: baseline; margin: 8px 2px 8px; font-size: 12px; font-weight: 800; color: var(--text-2); }
+.ig-results__count { color: var(--text-3); font-weight: 700; }
+.ig-place {
+  display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 10px 12px; margin-bottom: 8px;
+  background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+  color: var(--text); text-decoration: none;
+}
+.ig-place:active { background: var(--surface-hi); }
+.ig-place:focus-visible { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+.ig-place__emoji { flex: 0 0 auto; font-size: 20px; }
+.ig-place__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ig-place__name { font-size: 14.5px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ig-place__sub { font-size: 12px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ig-place__guess { flex: 0 0 auto; font-size: 11px; font-weight: 800; color: var(--c-amber); background: var(--c-amber-bg); border-radius: 999px; padding: 3px 8px; }
+.ig-place__go { flex: 0 0 auto; color: var(--text-3); font-size: 20px; }
+.ig-note { font-size: 12px; color: var(--text-3); line-height: 1.6; margin: 6px 2px 0; }
+.ig-note--warn { color: var(--c-amber); font-size: 13px; }
+
+/* ---------- 키리스 지도(Leaflet) ---------- */
+.lmap-pin { background: none; border: 0; }
+.lmap-pin span {
+  display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; box-sizing: border-box;
+  border-radius: 999px; border: 2.5px solid #fff; color: #1a1205; font: 700 13px/1 Arial, sans-serif;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .45);
+}
+.leaflet-container { background: #0d1322; font-family: inherit; }
+.leaflet-control-attribution { font-size: 10px; }
+.lmap-dark { filter: invert(1) hue-rotate(180deg) brightness(.92) contrast(.9) saturate(.7); }
+.leaflet-bar a, .leaflet-bar a:hover { background: var(--surface); color: var(--text); border-bottom-color: var(--line-strong); }
+.leaflet-bar { border: 1px solid var(--line-strong) !important; box-shadow: none !important; }

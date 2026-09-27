@@ -2,7 +2,8 @@
  *
  *   - TP.gmaps.lib("maps")로 지연 로드한 구글맵 위에 방문 순서 번호 마커와 점선 경로를 그린다.
  *   - 다크 프리미엄 테마에 맞춘 라스터 다크 스타일 사용(키만 있으면 동작, Map ID 불필요).
- *   - 키 없으면 안내 메시지로 graceful degrade.
+ *   - 키가 없거나 구글이 거부하면(결제 중지 등) Leaflet + OSM 지도(다크 필터)로 자동 전환.
+ *     같은 번호 핀·점선 동선·위치 선택을 그대로 제공한다.
  *   - 반환 계약(app.js/editor.js 의존):
  *       renderRoute → 핸들 객체(즉시 반환). destroy(handle)로 무효화.
  *       picker      → { map, setView(lat,lon) }. 모달에서 클릭/드래그로 좌표 지정.
@@ -77,6 +78,94 @@
     return box;
   }
 
+  /* ---------- 키리스 대안: Leaflet + OSM ---------- */
+  var LEAFLET = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/";
+  var leafletP = null;
+  function loadLeaflet() {
+    if (window.L && window.L.map) return Promise.resolve(window.L);
+    if (leafletP) return leafletP;
+    leafletP = new Promise(function (resolve, reject) {
+      var css = document.createElement("link");
+      css.rel = "stylesheet"; css.href = LEAFLET + "leaflet.min.css";
+      document.head.appendChild(css);
+      var sc = document.createElement("script");
+      sc.src = LEAFLET + "leaflet.min.js";
+      sc.onload = function () { if (window.L && window.L.map) resolve(window.L); else { leafletP = null; reject(new Error("leaflet")); } };
+      sc.onerror = function () { leafletP = null; reject(new Error("leaflet-load")); };
+      document.head.appendChild(sc);
+    });
+    return leafletP;
+  }
+  function darkTiles(L) {
+    // OSM 표준 타일(키 불필요). 다크 테마는 CSS 필터(.lmap-dark)로 반전해 맞춘다.
+    return L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19, className: "lmap-dark",
+      attribution: "&copy; OpenStreetMap contributors"
+    });
+  }
+  function useGoogle() { return !!(TP.gmaps && TP.gmaps.hasKey() && !TP.gmaps.isBroken("maps")); }
+
+  function leafletRoute(container, geoStops, color, handle) {
+    if (handle.lPending) return;             // 구글 실패 감지와 catch가 겹쳐도 한 번만
+    handle.lPending = true;
+    loadLeaflet().then(function (L) {
+      if (handle.destroyed || !container.isConnected) return;
+      container.innerHTML = "";
+      var div = document.createElement("div");
+      div.className = "gmap-canvas";
+      container.appendChild(div);
+      var map = L.map(div, { scrollWheelZoom: false });
+      darkTiles(L).addTo(map);
+      var pts = [];
+      geoStops.forEach(function (s, i) {
+        var ll = [s.lat, s.lon];
+        pts.push(ll);
+        L.marker(ll, {
+          icon: L.divIcon({ className: "lmap-pin", html: '<span style="background:' + color + '">' + (i + 1) + "</span>", iconSize: [30, 30], iconAnchor: [15, 15] }),
+          title: (i + 1) + ". " + (s.title || "장소"), zIndexOffset: 1000 - i
+        }).addTo(map).bindPopup(popupNode(s, i + 1));
+      });
+      if (pts.length > 1) L.polyline(pts, { color: color, weight: 3, opacity: 0.95, dashArray: "4 9" }).addTo(map);
+      if (pts.length === 1) map.setView(pts[0], 15); else map.fitBounds(pts, { padding: [44, 44] });
+      handle.lmap = map; handle.map = map;
+      setTimeout(function () { try { map.invalidateSize(); } catch (e) {} }, 80);
+    }).catch(function () { if (!handle.destroyed) fail(container, "지도를 불러오지 못했어요.\n인터넷 연결을 확인해주세요."); });
+  }
+
+  function leafletPicker(container, initial, onPick, handle) {
+    if (handle.lPending) return;
+    handle.lPending = true;
+    loadLeaflet().then(function (L) {
+      if (handle.destroyed || !container.isConnected) return;
+      container.innerHTML = "";
+      var div = document.createElement("div");
+      div.className = "gmap-canvas";
+      container.appendChild(div);
+      var hasInit = initial && isFinite(initial.lat);
+      var map = L.map(div).setView(hasInit ? [initial.lat, initial.lon] : [37.5665, 126.9780], hasInit ? 15 : 11);
+      darkTiles(L).addTo(map);
+      var icon = L.divIcon({ className: "lmap-pin", html: '<span style="background:#4f8bff">●</span>', iconSize: [30, 30], iconAnchor: [15, 15] });
+      var marker = null;
+      function place(lat, lon) {
+        try {
+          if (marker) marker.setLatLng([lat, lon]);
+          else {
+            marker = L.marker([lat, lon], { draggable: true, icon: icon }).addTo(map);
+            marker.on("dragend", function () { var p = marker.getLatLng(); onPick({ lat: p.lat, lon: p.lng }); });
+          }
+        } catch (e) {}
+        onPick({ lat: lat, lon: lon });
+      }
+      handle.lmap = map; handle.map = map;
+      handle.place = place;
+      handle.center = function (lat, lon) { map.setView([lat, lon], 15); };
+      if (hasInit) place(initial.lat, initial.lon);
+      map.on("click", function (e) { place(e.latlng.lat, e.latlng.lng); });
+      if (handle.pendingView) { var v = handle.pendingView; handle.center(v.lat, v.lon); place(v.lat, v.lon); handle.pendingView = null; }
+      setTimeout(function () { try { map.invalidateSize(); } catch (e) {} }, 80);
+    }).catch(function () { if (!handle.destroyed) fail(container, "지도를 불러오지 못했어요."); });
+  }
+
   /* 동선 지도 인스턴스 풀 —
    * app.js 의 render()는 화면을 통째로 다시 만든다. 그때마다 new google.maps.Map 을 만들면
    * "지도 탭을 누른 횟수"만큼 Dynamic Maps 로 과금된다(타임라인↔지도 3회 왕복 = 지도 3개).
@@ -99,11 +188,14 @@
     var geoStops = (stops || []).filter(hasCoord);
     if (!geoStops.length) return null;
     var handle = { destroyed: false, map: null };
-    if (!TP.gmaps || !TP.gmaps.hasKey()) {
-      fail(container, "구글 지도 키가 설정되지 않았어요.\nconfig.js에 키를 넣으면 지도가 켜져요.");
-      return handle;
-    }
     var color = opts.color || "#fb923c";
+    if (!useGoogle()) { leafletRoute(container, geoStops, color, handle); return handle; }
+    // 구글이 뒤늦게(지도 생성 1~2초 후) 결제/키 오류를 알리면 그 자리에서 OSM 지도로 갈아 끼운다
+    handle.off = TP.gmaps.onBroken("maps", function () {
+      if (handle.destroyed || !container.isConnected) return;
+      if (pool && pool.el.parentNode === container) container.removeChild(pool.el);
+      leafletRoute(container, geoStops, color, handle);
+    });
     // maps + marker 동시 로드: google.maps.Marker는 "marker" 라이브러리 소속이라 함께 임포트해야 보장됨
     Promise.all([TP.gmaps.lib("maps"), TP.gmaps.lib("marker")]).then(function (libs) {
       var maps = libs[0];
@@ -142,21 +234,26 @@
       if (path.length > 1) { pool.line = dashedLine(path, color); pool.line.setMap(map); }
       map.fitBounds(bounds, 44);
       if (path.length === 1) { map.setCenter(path[0]); map.setZoom(15); }
-    }).catch(function () { if (!handle.destroyed) fail(container, "지도를 불러오지 못했어요."); });
+    }).catch(function () { if (!handle.destroyed) leafletRoute(container, geoStops, color, handle); });
     return handle;
   }
 
   /* 위치 선택기: 클릭/드래그로 좌표 지정 → { map, setView } */
   function picker(container, initial, onPick) {
-    var handle = { destroyed: false, map: null, place: null, pendingView: null };
+    var handle = { destroyed: false, map: null, place: null, center: null, pendingView: null };
     var wrapper = {
       map: handle,
       setView: function (lat, lon) {
-        if (handle.place && handle.map) { handle.map.setCenter({ lat: lat, lng: lon }); handle.map.setZoom(15); handle.place(lat, lon); }
+        if (handle.place && handle.center) { handle.center(lat, lon); handle.place(lat, lon); }
         else handle.pendingView = { lat: lat, lon: lon };
       }
     };
-    if (!TP.gmaps || !TP.gmaps.hasKey()) { fail(container, "구글 지도 키가 설정되지 않았어요."); return wrapper; }
+    if (!useGoogle()) { leafletPicker(container, initial, onPick, handle); return wrapper; }
+    handle.off = TP.gmaps.onBroken("maps", function () {
+      if (handle.destroyed || !container.isConnected) return;
+      handle.place = null; handle.center = null;
+      leafletPicker(container, initial, onPick, handle);
+    });
     Promise.all([TP.gmaps.lib("maps"), TP.gmaps.lib("marker")]).then(function (libs) {
       var maps = libs[0];
       if (handle.destroyed || !container.isConnected) return;
@@ -177,10 +274,11 @@
         onPick({ lat: lat, lon: lon });
       }
       handle.place = place;
+      handle.center = function (lat, lon) { map.setCenter({ lat: lat, lng: lon }); map.setZoom(15); };
       if (hasInit) place(initial.lat, initial.lon);
       map.addListener("click", function (e) { place(e.latLng.lat(), e.latLng.lng()); });
       if (handle.pendingView) { var v = handle.pendingView; map.setCenter({ lat: v.lat, lng: v.lon }); map.setZoom(15); place(v.lat, v.lon); handle.pendingView = null; }
-    }).catch(function () { if (!handle.destroyed) fail(container, "지도를 불러오지 못했어요."); });
+    }).catch(function () { if (!handle.destroyed) leafletPicker(container, initial, onPick, handle); });
     return wrapper;
   }
 
@@ -190,8 +288,16 @@
   function destroy(h) {
     if (!h) return;
     try {
-      if (h.setView && h.map) { h.map.destroyed = true; return; }   // picker wrapper { map: handle, setView }
+      if (h.setView && h.map) {                                     // picker wrapper { map: handle, setView }
+        var ph = h.map;
+        ph.destroyed = true;
+        if (ph.off) ph.off();
+        if (ph.lmap) { ph.lmap.remove(); ph.lmap = null; }
+        return;
+      }
       h.destroyed = true;                                           // renderRoute handle
+      if (h.off) h.off();
+      if (h.lmap) { h.lmap.remove(); h.lmap = null; return; }       // OSM 지도는 매번 새로 만든다(과금 없음)
       if (pool && pool.map) clearOverlays(pool);
     } catch (e) {}
   }

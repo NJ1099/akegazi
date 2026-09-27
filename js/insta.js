@@ -13,7 +13,7 @@
   var CFG = window.TP_CONFIG || {};
   var WORKER = ((CFG.INSTA_WORKER_URL || "") + "").trim();
   var LS_KEY = "akegazi.insta.v1";
-  var MAX_IMAGES = 10, MAX_EDGE = 1400, QUALITY = 0.82;
+  var MAX_IMAGES = 12, MAX_EDGE = 1400, QUALITY = 0.82;
 
   var CAT_EMOJI = [
     [/카페|cafe|coffee|디저트|dessert|베이커리|bakery/i, "☕"],
@@ -64,26 +64,45 @@
     });
   }
 
-  function analyze(images, caption) {
+  function post(path, payload) {
     var ctl = window.AbortController ? new AbortController() : null;
     var timer = setTimeout(function () { if (ctl) ctl.abort(); }, 90000);
-    return fetch(WORKER, {
+    return fetch(WORKER.replace(/\/$/, "") + path, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        images: images.map(function (i) { return { type: "image/jpeg", data: i.data }; }),
-        caption: caption
-      }),
+      body: JSON.stringify(payload),
       signal: ctl ? ctl.signal : undefined
     }).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (j) {
         clearTimeout(timer);
         if (!r.ok) throw new Error(j.error || ("서버 오류 (" + r.status + ")"));
-        return Array.isArray(j.places) ? j.places : [];
+        return j;
       });
     }, function (e) {
       clearTimeout(timer);
       throw (e && e.name === "AbortError") ? new Error("시간이 너무 오래 걸려요. 사진 수를 줄여보세요") : new Error("연결에 실패했어요");
+    });
+  }
+  function sameKey(p) { return String(p.name || p.name_ko || "").toLowerCase().replace(/[^0-9a-z฀-๿가-힣]/g, ""); }
+  /* 링크(캡션·표지)와 캡처 사진을 함께 분석해 합친다 → { places, link }
+   * 링크만으로는 인스타가 첫 사진과 캡션만 내준다(넘겨 보는 사진은 로그인 벽 뒤) — link.imagesFromLink 로 안내한다. */
+  function analyze(images, caption, url) {
+    var jobs = [];
+    if (url) jobs.push(post("/link", { url: url }));
+    if (images.length || (caption && !url)) jobs.push(post("/", {
+      images: images.map(function (i) { return { type: "image/jpeg", data: i.data }; }),
+      caption: caption
+    }));
+    return Promise.all(jobs.map(function (j) { return j.then(function (v) { return v; }, function (e) { return { error: e }; }); })).then(function (res) {
+      var ok = res.filter(function (r) { return !r.error; });
+      if (!ok.length) throw res[0].error;
+      var seen = {}, places = [];
+      // 캡처 사진 쪽 결과를 먼저(게시물 순서), 링크 쪽은 새로 나온 곳만 뒤에
+      ok.slice().reverse().forEach(function (r) {
+        (r.places || []).forEach(function (p) { var k = sameKey(p); if (k && !seen[k]) { seen[k] = 1; places.push(p); } });
+      });
+      var link = ok.filter(function (r) { return r.link; })[0];
+      return { places: places, link: link ? link.link : null, partialError: ok.length < res.length ? (res.filter(function (r) { return r.error; })[0].error.message) : "" };
     });
   }
 
@@ -118,16 +137,28 @@
     var s = S.addStop(target.dayId, {
       type: stopType(p.category), title: title,
       subtitle: (p.name_ko && p.name && p.name !== p.name_ko) ? p.name : "",
+      address: p.address || "",
       note: "📸 인스타에서 찾은 장소"
     });
     if (!s) return Promise.resolve(false);
-    var q = [p.name || p.name_ko, p.area].filter(Boolean).join(" ");
+    // 이름으로 먼저, 못 찾으면 게시물에 적힌 주소로(작은 가게는 OSM 에 이름이 없고 주소만 있는 경우가 많다)
+    // 마지막 수단: 번지(11, 3 / 6/1,6 …)와 건물명을 떼고 골목·거리만 — 가게 자리는 아니어도 그 거리에 핀이 찍힌다
+    var street = String(p.address || "").split(",").map(function (x) { return x.trim(); })
+      .filter(function (x) { return /[a-z]/i.test(x) && !/mall|hotel|plaza|tower|center|centre|\d+f\b/i.test(x); })
+      .map(function (x) { return x.replace(/^[\d\s\/-]+/, "").trim(); })[0] || "";
+    var queries = [[p.name || p.name_ko, p.area], [p.address, p.area], [street, (p.area || "").split(" ")[0]]]
+      .map(function (a) { return a.filter(Boolean).join(" "); })
+      .filter(function (q, i, arr) { return q && (i === 0 || p.address) && arr.indexOf(q) === i; });
+    function findFirst(i) {
+      if (i >= queries.length) return Promise.resolve([]);
+      return TP.geo.geocode(queries[i]).then(function (list) { return (list && list.length) ? list : findFirst(i + 1); }, function () { return findFirst(i + 1); });
+    }
     geoQueue = geoQueue.then(function () {
-      return TP.geo.geocode(q).then(function (list) {
+      return findFirst(0).then(function (list) {
         var r = list && list[0];
         if (!r) return false;
         S.setActive(target.tripId);                      // 사이에 다른 여행을 열었어도 제자리에 쓴다
-        S.updateStop(target.dayId, s.id, { lat: r.lat, lon: r.lon, address: r.address || "", openHours: s.openHours || r.hours || "" });
+        S.updateStop(target.dayId, s.id, { lat: r.lat, lon: r.lon, address: p.address || r.address || "", openHours: s.openHours || r.hours || "" });
         return true;
       }, function () { return false; });
     });
@@ -211,7 +242,7 @@
 
     TP.editor.modal(function (box, close) {
       box.appendChild(el("div.modal__title", { text: "📸 인스타에서 장소 찾기" }));
-      box.appendChild(el("div.modal__sub", { text: "게시물 사진을 캡처해 올리면 소개된 장소를 찾아드려요." }));
+      box.appendChild(el("div.modal__sub", { text: "게시물 링크를 붙여넣거나 사진을 캡처해 올리면 소개된 장소를 찾아드려요." }));
 
       var results = el("div.ig-results");
       var goBar = el("div.ig-gobar");
@@ -232,6 +263,7 @@
         var fileIn = el("input", { type: "file", accept: "image/*", multiple: true, hidden: true });
         var thumbs = el("div.ig-thumbs");
         var pickBtn = el("button.btn.btn--ghost.btn--block", { onclick: function () { fileIn.click(); } }, ["🖼 스크린샷 선택"]);
+        var linkIn = el("input.input", { type: "url", inputmode: "url", placeholder: "인스타 게시물 링크 붙여넣기 (instagram.com/p/…)", "aria-label": "인스타 게시물 링크" });
         var cap = el("textarea.textarea", { rows: "3", placeholder: "캡션을 복사해 붙여넣으면 더 정확해요 (선택)" });
         var status = el("div.ig-status", { role: "status", "aria-live": "polite" });
         var goBtn = el("button.btn.btn--block", { onclick: run }, ["📍 장소 찾기"]);
@@ -265,18 +297,26 @@
         function run() {
           if (busy) return;
           var caption = cap.value.trim();
-          if (!shots.length && !caption) { U.toast("사진이나 캡션을 넣어주세요"); return; }
+          var url = linkIn.value.trim();
+          if (url && !/instagram\.com\//i.test(url)) { U.toast("인스타 게시물 링크를 넣어주세요"); return; }
+          if (!shots.length && !caption && !url) { U.toast("링크·사진·캡션 중 하나를 넣어주세요"); return; }
           busy = true; goBtn.disabled = true;
-          status.textContent = "🔎 사진을 읽고 있어요… (10~30초)";
-          analyze(shots, caption).then(function (places) {
+          status.textContent = shots.length ? "🔎 사진 " + shots.length + "장을 읽고 있어요… (10~30초)" : "🔎 게시물을 읽고 있어요… (5~15초)";
+          analyze(shots, caption, url).then(function (res) {
+            var places = res.places;
             saveLast(places);
-            status.textContent = "";
+            var notes = [];
+            // 링크만 넣었으면 첫 사진·캡션만 읽은 것이다 — 여러 장짜리 게시물은 캡처가 필요하다고 알려 준다
+            if (res.link && !shots.length) notes.push("링크로는 첫 사진과 캡션만 읽을 수 있어요. 사진을 넘겨 보는 게시물이면 각 사진을 캡처해서 함께 올려 주세요.");
+            if (res.partialError) notes.push("일부는 읽지 못했어요: " + res.partialError);
+            status.textContent = notes.join(" ");
             renderResults(results, places, "찾은 장소", makeCtx);
           }, function (err) {
             status.textContent = "⚠️ " + err.message;
           }).then(function () { busy = false; goBtn.disabled = false; });
         }
 
+        box.appendChild(el("div.field", null, [linkIn]));
         box.appendChild(fileIn);
         box.appendChild(pickBtn);
         box.appendChild(thumbs);

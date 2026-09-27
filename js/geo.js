@@ -142,10 +142,20 @@
     }).join(", ");
   }
 
+  /* Nominatim 은 "초당 1회" 정책이다. 인스타 장소 37곳을 한꺼번에 담았더니(곳마다 이름·주소·이름변환 후보로
+   * 여러 번) 이 IP 가 429 로 막혔다(2026-09-27 실측) — 그 뒤로는 모든 검색이 조용히 0건이 된다.
+   * 그래서 모든 호출을 한 줄로 세우고 1.1초 간격을 강제한다. */
+  var nomiChain = Promise.resolve();
+  function nominatim(url) {
+    var p = nomiChain.then(function () { return fetchJSON(url, { timeout: 9000 }); });
+    nomiChain = p.catch(function () {}).then(function () { return new Promise(function (r) { setTimeout(r, 1100); }); });
+    return p;
+  }
+
   // 키리스 폴백: Nominatim(OSM) → Open-Meteo(도시명)
   function keylessGeocode(query) {
     var nomi = "https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&extratags=1&limit=6&accept-language=ko&q=" + encodeURIComponent(query);
-    return fetchJSON(nomi, { timeout: 9000 }).then(function (arr) {
+    return nominatim(nomi).then(function (arr) {
       var out = (arr || []).map(function (r) {
         return {
           name: shortName(r),

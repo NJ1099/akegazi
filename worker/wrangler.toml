@@ -3,7 +3,7 @@
 #
 # 배포 (이 폴더에서):
 #   npx wrangler deploy
-#   npx wrangler secret put ANTHROPIC_API_KEY   ← 키는 직접 붙여넣을 것(파일·채팅에 쓰지 않는다)
+#   (Claude 로 돌릴 때만) PROVIDER="claude" + npx wrangler secret put ANTHROPIC_API_KEY — 키는 직접 붙여넣을 것
 #
 # 이 파일은 공개 repo 에 올라간다. 비밀 값을 절대 여기 적지 말 것.
 
@@ -11,6 +11,11 @@ name = "akegazi-insta"
 main = "worker.js"
 compatibility_date = "2026-09-01"
 
+# Workers AI — 키 없이 하루 10,000 뉴런 무료. 사진 분석·장소명 변환 모두 여기서 돈다.
+[ai]
+binding = "AI"
+
 [vars]
+PROVIDER = "workers-ai"
 # 허용 사이트(쉼표 구분). localhost 는 로컬 확인용.
 ALLOWED_ORIGINS = "https://nj1099.github.io,http://localhost:4701"

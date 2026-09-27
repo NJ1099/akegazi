@@ -168,7 +168,7 @@
 
 🔴 **지금 배포판은 구글이 전부 막혀 있다 — 원인은 구글 클라우드 결제 중지**(`BillingNotEnabledMapError`, Places 는 `PERMISSION_DENIED: The caller does not have permission`). 리퍼러는 통과한다(타 도메인은 `API_KEY_HTTP_REFERRER_BLOCKED` 로 다르게 거부됨 — 구분 근거). 13차의 자동 전환 덕에 지도는 OSM 으로 정상이지만 **검색은 OSM 뿐이라 한글 음역명이 0건**이었다("그랜드 센터 포인트 룸피니 방콕" 0건 / "Grande Centre Point Lumphini" 적중 — 사용자 제보 "태국 호텔 검색하면 안 나온다"). 결제를 되살리면 구글 검색으로 돌아온다(1시간 기억 후).
 
-1. **Worker 배포** — `worker/wrangler.toml`(이름 `akegazi-insta`) → **https://akegazi-insta.kado-alert-bot.workers.dev** . ⚠️ 이 PC 의 wrangler 인증은 **kado-alert-bot 폴더에서만 잡힌다**(그 폴더 `.env` 의 토큰) — 배포는 `cd E:/AI/kado-alert-bot && npx wrangler deploy --config ../akegazi-main/worker/wrangler.toml`. 🔴 **`ANTHROPIC_API_KEY` 시크릿은 사용자가 직접 넣어야 한다**(같은 방식으로 `npx wrangler secret put ANTHROPIC_API_KEY --config ../akegazi-main/worker/wrangler.toml`). 없으면 Worker 가 500 "ANTHROPIC_API_KEY가 설정되지 않았어요" 를 준다.
+1. **Worker 배포** — `worker/wrangler.toml`(이름 `akegazi-insta`) → **https://akegazi-insta.kado-alert-bot.workers.dev** . ⚠️ 이 PC 의 wrangler 인증은 **kado-alert-bot 폴더에서만 잡힌다**(그 폴더 `.env` 의 토큰) — 배포는 `cd E:/AI/kado-alert-bot && npx wrangler deploy --config ../akegazi-main/worker/wrangler.toml`. ~~`ANTHROPIC_API_KEY` 시크릿~~ → 16차에서 Workers AI 로 바꿔 **불필요**(같은 방식으로 `npx wrangler secret put ANTHROPIC_API_KEY --config ../akegazi-main/worker/wrangler.toml`). 없으면 Worker 가 500 "ANTHROPIC_API_KEY가 설정되지 않았어요" 를 준다.
 2. **`POST /name`** (Worker) — 한글 장소명 → OSM 검색용 영문/현지어 이름 최대 3개(Haiku 4.5). `geo.geocode` 가 **구글·OSM 모두 0건일 때만** 부른다(`aiNameGeocode` — 한글 포함 4자 이상, 세션 캐시). 편집창 검색·인스타 담기 모두 이 한 벌을 탄다.
 3. **인스타 결과 → 여행에 담기** (`insta.js`) — "담을 날짜" 셀렉트(모든 여행의 날짜, 지금 여행 먼저) + 줄마다 ＋ + "전부 여행에 담기". 날짜 맨 뒤에 붙이고(카테고리 → 종류: 숙소=lodging·카페=cafe·식당/바=food·체험/스파=activity·그 외 attraction) `name + area` 로 위치를 찾아 좌표·주소·영업시간을 채운다 → **지도 번호 핀**. 위치 찾기는 **순차 큐**(Nominatim 초당 1회). 담은 뒤 "📅 담은 날짜 일정 보기". 여행이 하나도 없으면 담기 UI 없이 구글맵 링크만.
 4. `util.fetchJSON` 이 `method`·`body` 를 받게 했다(기존 GET 호출 영향 없음). **sw.js CACHE v9→v10**.
@@ -189,6 +189,25 @@
 
 **검증** — Node: 지역 추천 30/30 · 26종 폴백 환율 누락 0 · rateLabel 9방향. 브라우저: "방콕" 입력 → THB 자동 선택 · "฿1 ≈ ₩41 · 실시간" · 여행 생성 후 **새로고침해도 THB 유지** · 헤더 환율 · 호텔→왓 아룬 택시 ฿101 예상 · 입장료 ฿200 ≈ ₩8,130.
 ⚠️ 로컬 확인 때 **서비스 워커가 옛 셸을 줘서** 새 코드가 안 보였다(서버는 새 파일을 주고 있었다) — 테스트 브라우저에서 SW 등록 해제 + `caches` 삭제 후 재확인. 이미 **예전에 JPY 로 저장된 태국 여행은 자동으로 안 바뀐다** — ✎ 편집에서 바트로 바꿔야 한다.
+
+### 16차 (분석을 Workers AI 로 — 키 없이 무료 · 인스타 링크 입력 · 담기 위치 보강) — 2026-09-27
+
+**동기** — 수익화하면 Claude API 비용이 부담(사용자 질문). Worker 가 **Cloudflare Workers AI(`[ai]` 바인딩, 하루 10,000 뉴런 무료)** 로 돈다. Claude 경로는 `PROVIDER="claude"` + 시크릿으로 되살릴 수 있게 남겼다(유료 등급용). **이제 ANTHROPIC_API_KEY 는 필요 없다.**
+
+1. **모델 `@cf/meta/llama-4-scout-17b-16e-instruct`**(사진 인식). **사진은 한 장씩 병렬 호출 후 합친다.** 실측 함정 3개:
+   - 🔴 **요청에 "[사진 2/10]" 번호를 붙이면 "사진 속 2번째 장소"로 읽어 한 곳만 답한다**(4곳 → 1곳). 번호를 빼고 "하나도 빠짐없이"로.
+   - 🔴 **2×2 격자 카드의 아래 줄을 자주 빠뜨린다** — "맨 위 줄부터 아래 줄까지, 왼쪽→오른쪽" 과 "깨진 글자(□)가 있어도 읽을 수 있는 부분으로" 를 지시에 못 박자 **36/36 을 3회 연속**.
+   - 답이 비거나 JSON 이 깨지면 **한 번 재질문** + 깨진 배열에서 `{…}` 항목만이라도 살린다(`parseArray`).
+   - 캡션 분석은 "방콕·실롬·수쿰윗…" **동네 이름을 장소로 내놓는다**(실측 9건) → 지시문에 금지 + 주소 없는 캡션 결과가 캡션 나열(·,/ "등" 제거) 또는 사진 결과의 area 와 겹치면 버린다.
+   - 결과에 `address`(게시물에 적힌 주소)를 받는다. `usage.perCall`(호출별 개수)로 어느 사진이 빠졌는지 진단한다.
+2. **실측(맨즈나우 「방콕 맛집 36곳」 DdV69eJgWuh, 캡처 10장+캡션)** — **36/36 + 표지 간판 1곳 · 11~14초 · 약 2.8만 토큰/회**. 단가($0.27/M 입력 · $0.85/M 출력)로 환산하면 **한 번에 약 800 뉴런 → 무료 한도로 이런 10장 게시물 하루 약 12회, 캡처 1장이면 약 120회**(환산 추정 — 대시보드 실측 아님). 한도가 넘으면 Worker 가 429 "오늘 무료 분석 한도를 다 썼어요".
+3. **`POST /link`** — 인스타 링크 → 크롤러 UA(`facebookexternalhit`)로 og 태그만 읽어 **캡션 + 표지 1장**을 분석. 🔴 **넘겨 보는 나머지 사진은 로그인 벽 뒤라 서버가 못 받는다**(응답에 표지 1장뿐 — 실측). 화면이 "여러 장이면 캡처를 함께 올려 달라"고 안내한다. **instagram.com 의 /p/·/reel/·/tv/ 만 연다**(다른 주소를 서버가 대신 열지 않게 — 403 확인). Cloudflare 에서 인스타 응답 정상 확인.
+4. **앱(insta.js)** — 링크 입력칸 + 캡처(최대 12장) + 캡션. 링크와 캡처를 **함께 분석해 합친다**(캡처 결과 먼저). 담을 때 **주소를 먼저 넣고**, 위치는 **이름 → 게시물 주소 → 번지 뗀 거리 이름** 순서로 찾는다.
+5. 🔴 **OSM(Nominatim) 대량 호출로 이 PC IP 가 429 차단됐다** — 37곳을 한꺼번에 담자 곳마다 여러 검색이 나갔다. 그 뒤로는 모든 검색이 **조용히 0건**. `geo.js::nominatim` 이 **모든 OSM 호출을 한 줄로 세워 1.1초 간격**을 강제한다. 차단 전 결과: 37곳 중 **12곳만 좌표**(OSM 에 방콕 작은 식당이 거의 없다) — **대량 담기는 구글 Places 가 켜져야 제대로 된다**(구글 결제 = 무료 한도 안). 1.1초 간격·거리 폴백 반영 후 재측정은 **차단이 안 풀려 못 했다**.
+6. **sw.js CACHE v11→v12**.
+
+**앱 실측(로컬 · 헤드리스)** — 링크 + 캡처 9장 → **9.7초에 37곳** → "전부 담기" 93초 → 좌표 12/37(구글 없이 OSM 만 · 429 영향 포함).
+⚠️ Wrangler 토큰은 Workers AI 모델 목록 조회 권한이 없다(`wrangler ai models list` 실패) — 모델 확인은 문서(Context7 `/websites/developers_cloudflare_workers-ai`)로.
 
 ## 알려진 제약 / TODO
 - **정확한 구글 교통비는 'Distance Matrix API' 필요** — 키에 그 API를 추가 허용해야 실거리·실제 대중교통 요금 반영. 미허용이면 직선×1.4 추정(공항 좌표는 채워지므로 기본요금 버그는 해소).

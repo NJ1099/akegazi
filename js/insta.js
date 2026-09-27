@@ -128,6 +128,16 @@
     });
     return out;
   }
+  // 도시 중심 좌표(한 번 찾으면 기억). 못 찾으면 null → 거리 검사 없이 받는다.
+  var NEAR_KM = 60;
+  var cityMem = {};
+  function cityCenter(city) {
+    if (!city) return Promise.resolve(null);
+    if (!cityMem[city]) {
+      cityMem[city] = TP.geo.geocode(city).then(function (l) { return (l && l[0]) ? { lat: l[0].lat, lon: l[0].lon } : null; }, function () { return null; });
+    }
+    return cityMem[city];
+  }
   // 위치 찾기는 차례로 — OSM(Nominatim)은 초당 1회 정책이라 한꺼번에 쏘면 막힌다
   var geoQueue = Promise.resolve();
   function addToTrip(p, target) {
@@ -149,12 +159,18 @@
     var queries = [[p.name || p.name_ko, p.area], [p.address, p.area], [street, (p.area || "").split(" ")[0]]]
       .map(function (a) { return a.filter(Boolean).join(" "); })
       .filter(function (q, i, arr) { return q && (i === 0 || p.address) && arr.indexOf(q) === i; });
-    function findFirst(i) {
+    // 🔴 OSM 은 이름이 같은 다른 나라 가게를 준다("The Family" → 미국 — 2026-09-27 실측).
+    // 게시물 도시(area 첫 단어, 없으면 여행 지역)의 중심에서 NEAR_KM 안의 결과만 받는다.
+    var city = (p.area || "").split(/\s+/)[0] || ((S.trip(target.tripId) || {}).region || "");
+    function findFirst(center, i) {
       if (i >= queries.length) return Promise.resolve([]);
-      return TP.geo.geocode(queries[i]).then(function (list) { return (list && list.length) ? list : findFirst(i + 1); }, function () { return findFirst(i + 1); });
+      return TP.geo.geocode(queries[i]).then(function (list) {
+        var near = (list || []).filter(function (r) { return !center || TP.geo.haversine(center, r) < NEAR_KM * 1000; });
+        return near.length ? near : findFirst(center, i + 1);
+      }, function () { return findFirst(center, i + 1); });
     }
     geoQueue = geoQueue.then(function () {
-      return findFirst(0).then(function (list) {
+      return cityCenter(city).then(function (center) { return findFirst(center, 0); }).then(function (list) {
         var r = list && list[0];
         if (!r) return false;
         S.setActive(target.tripId);                      // 사이에 다른 여행을 열었어도 제자리에 쓴다

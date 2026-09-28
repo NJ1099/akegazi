@@ -213,6 +213,7 @@
         ]),
         d.label ? el("div.day-card__label", { text: d.label }) : null,
         stayChip(trip, d),
+        stopList(d),
         el("div.day-card__foot", null, [weatherChip(d, myEpoch), el("div.day-card__count", { text: d.stops.length ? d.stops.length + "곳" : "비어 있음" })])
       ]);
       (function (dd, no) {
@@ -237,6 +238,22 @@
     if (!st) return null;
     var t = st.stop.title || "숙소";
     return el("div.day-card__stay", { text: st.checkout ? "🧳 체크아웃 · " + t : "🏨 " + t + " · " + st.night + "/" + st.nights + "박" });
+  }
+  /* Day 카드 안의 장소 목록 — 들어가 보지 않아도 그날 동선이 한눈에 보이게(시각 · 아이콘 · 이름 한 줄씩) */
+  var LIST_MAX = 6;
+  function stopList(d) {
+    if (!d.stops.length) return null;
+    var rows = d.stops.slice(0, LIST_MAX).map(function (s, i) {
+      var tm = s.time || s.arriveTime || s.departTime || "";
+      return el("li.day-list__row", null, [
+        el("span.day-list__no", { text: String(i + 1) }),          // 동선 순서
+        el("span.day-list__icon", { text: R.typeIcon(s) }),
+        el("span.day-list__name", { text: s.title || "(이름 없음)" }),
+        tm ? el("span.day-list__time", { text: tm }) : null
+      ]);
+    });
+    if (d.stops.length > LIST_MAX) rows.push(el("li.day-list__more", { text: "외 " + (d.stops.length - LIST_MAX) + "곳" }));
+    return el("ol.day-list", null, rows);
   }
   function addLodging() {
     TP.editor.openStopModal(null, null, { type: "lodging" });

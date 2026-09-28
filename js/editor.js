@@ -179,8 +179,10 @@
 
       // ----- 위치 (이름 입력 → 자동 검색 결과는 이름칸 아래 results에 표시) -----
       function showPicked() {
+        pickedLabel.innerHTML = "";
         if (TP.geo.hasCoord(f)) {
-          pickedLabel.textContent = "📍 좌표 설정됨 (" + f.lat.toFixed(4) + ", " + f.lon.toFixed(4) + ")" + (f.address ? " · " + f.address : "");
+          pickedLabel.appendChild(el("span.geo-picked__txt", { text: "📍 " + (f.address || "위치 설정됨") }));
+          pickedLabel.appendChild(el("button.link-btn.geo-picked__re", { type: "button", onclick: function () { searchSeq++; doSearch(); } }, ["다시 찾기"]));
           pickedLabel.style.display = "flex";
         } else { pickedLabel.style.display = "none"; }
       }
@@ -195,6 +197,7 @@
         TP.geo.geocode(q).then(function (list) {
           if (mySeq !== searchSeq) return;   // 더 최신 검색이 시작됨 → stale 결과 무시
           results.innerHTML = "";
+          revealResults();
           if (!list.length) { results.appendChild(el("div.geo-result", { text: "결과가 없어요. 이름을 더 구체적으로 적어보세요." })); return; }
           list.forEach(function (r) {
             results.appendChild(el("button.geo-result", {
@@ -206,7 +209,7 @@
                 if (addrInput) addrInput.value = f.address;
                 var filledHours = false;
                 if (r.hours && !((f.openHours || "").trim())) { f.openHours = r.hours; if (openHoursInput) openHoursInput.value = r.hours; filledHours = true; }   // 구글 영업시간 자동 채움(비어 있을 때만)
-                results.innerHTML = ""; showPicked();
+                results.innerHTML = ""; openedTitle = (titleInput.value || "").trim(); showPicked();
                 if (pickMap && pickMap.setView) pickMap.setView(r.lat, r.lon);
                 U.toast(filledHours ? "위치·영업시간을 설정했어요" : "위치를 설정했어요");
               }
@@ -217,9 +220,16 @@
           results.innerHTML = ""; results.appendChild(el("div.geo-result", { text: "검색에 실패했어요. 잠시 후 다시 시도하세요." }));
         });
       }
+      function revealResults() {
+        try { results.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch (e) {}
+      }
+      // 위치가 이미 있어도 '이름을 바꿨으면' 검색한다. 예전엔 좌표가 있으면 자동검색을 통째로 건너뛰어
+      // 수정 화면에서 이름을 고쳐도 결과가 안 나왔다(사용자 제보 2026-09-28). 처음 열었을 때 이름 그대로면 조용히 둔다.
+      var openedTitle = (f.title || "").trim();
       var liveSearch = U.debounce(function () {
-        if ((titleInput.value || "").trim().length >= 2 && !TP.geo.hasCoord(f)) doSearch();   // 좌표 이미 있으면 자동검색 안 함(수정 방해 방지)
-        else if ((titleInput.value || "").trim().length < 2) { searchSeq++; results.innerHTML = ""; }
+        var q = (titleInput.value || "").trim();
+        if (q.length < 2) { searchSeq++; results.innerHTML = ""; return; }
+        if (!TP.geo.hasCoord(f) || q !== openedTitle) doSearch();
       }, 420);
       titleInput.addEventListener("input", liveSearch);                                       // 이름 입력 → 자동 검색
       titleInput.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); doSearch(); } });
@@ -245,7 +255,7 @@
           } else { mapBox.style.display = "none"; this.textContent = "지도에서 직접 선택"; }
         }
       }, ["지도에서 직접 선택"]);
-      var reSearchBtn = el("button.btn.btn--ghost.btn--sm", { type: "button", style: { marginLeft: "8px" }, onclick: function () { searchSeq++; doSearch(); } }, ["🔎 이름으로 다시 검색"]);
+      var reSearchBtn = el("button.btn.btn--ghost.btn--sm", { type: "button", style: { marginLeft: "8px" }, onclick: function () { searchSeq++; doSearch(); } }, ["🔎 이름으로 다시 찾기"]);
 
       adv.appendChild(field("위치", el("div", null, [el("div", null, [mapToggle, reSearchBtn]), mapBox]),
         "이름으로 자동 검색되며, 안 맞으면 지도에서 직접 찍거나 다시 검색하세요"));

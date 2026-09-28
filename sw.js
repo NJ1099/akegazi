@@ -8,7 +8,7 @@
  *
  *   캐시 무효화가 필요하면 CACHE 이름의 버전을 올린다(예: akegazi-v2).
  */
-var CACHE = "akegazi-v17";
+var CACHE = "akegazi-v18";
 
 /* 앱 셸 프리캐시 — 설치 시 한 번에 담아 둔다.
  * 이유: network-first 는 "한 번이라도 받아본" 리소스만 캐시에 남는다. 여행 앱은 비행기 모드/
@@ -51,7 +51,10 @@ self.addEventListener("fetch", function (e) {
   if (url.origin !== self.location.origin) return;                   // 외부 API는 그대로 통과(구글맵 등)
 
   e.respondWith(
-    fetch(req).then(function (res) {                                  // 네트워크 우선
+    // cache:"no-cache" — 브라우저 HTTP 캐시를 그대로 쓰지 말고 매번 서버에 재확인(바뀐 게 없으면 304라 가볍다).
+    // 기본값으로 두면 GitHub Pages 의 max-age=600 때문에 배포 후 최대 10분간 옛 JS 가 돌았다
+    // (2026-09-28 실측: 새 sw.js 는 받았는데 editor.js 는 이전 버전이 실행되고 있었다).
+    fetch(req, { cache: "no-cache" }).then(function (res) {           // 네트워크 우선
       if (res && res.status === 200 && res.type === "basic") {
         var copy = res.clone();
         caches.open(CACHE).then(function (c) { c.put(req, copy); }).catch(function () {});

@@ -7,8 +7,10 @@
  *   - skipWaiting + clients.claim 으로 새 버전이 즉시 활성화됨.
  *
  *   캐시 무효화가 필요하면 CACHE 이름의 버전을 올린다(예: akegazi-v2).
+ *   🔴 JS/CSS 를 바꾸면 index.html 의 ?v=N 도 같은 숫자로 올릴 것 — 워커가 페이지를 제어하지 않는 순간
+ *   (첫 방문·워커 교체 중)에는 브라우저 HTTP 캐시(max-age=600)가 옛 파일을 그대로 내준다(2026-09-28 실측).
  */
-var CACHE = "akegazi-v19";
+var CACHE = "akegazi-v20";
 
 /* 앱 셸 프리캐시 — 설치 시 한 번에 담아 둔다.
  * 이유: network-first 는 "한 번이라도 받아본" 리소스만 캐시에 남는다. 여행 앱은 비행기 모드/
@@ -61,7 +63,8 @@ self.addEventListener("fetch", function (e) {
       }
       return res;
     }).catch(function () {                                            // 오프라인 → 캐시 폴백
-      return caches.match(req).then(function (c) {
+      // ignoreSearch: index.html 이 ./js/app.js?v=N 처럼 버전을 붙여 부르므로, 설치 때 넣어 둔 ./js/app.js 와도 맞춰 준다
+      return caches.match(req, { ignoreSearch: true }).then(function (c) {
         return c || (req.mode === "navigate" ? caches.match("./index.html") : undefined);
       });
     })

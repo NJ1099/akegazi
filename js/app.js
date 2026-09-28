@@ -164,7 +164,6 @@
         trip.region ? el("span", { text: "📍 " + trip.region }) : null,
         el("span", { text: range || "날짜를 추가해 일정을 시작하세요" }),
         trip.days.length ? el("span", { text: "· " + trip.days.length + "일 · " + totalStops + "곳" }) : null,
-        el("span", { text: "· " + TP.money.cfg(trip.currency).sym.trim() + " " + TP.money.cfg(trip.currency).name }),
         // 현재 환율(실측을 받으면 ensureFx 가 다시 그려 실값으로 바뀐다)
         (trip.homeCurrency && trip.homeCurrency !== trip.currency)
           ? el("span", { text: "· " + TP.money.rateLabel(trip.currency, trip.homeCurrency) }) : null
@@ -176,13 +175,34 @@
 
     if (!trip.days.length) {
       viewEl.appendChild(el("div.empty", null, [
-        el("div.empty__emoji", { html: "🗓️" }),
-        el("div.empty__title", { text: "이 여행에 날짜를 추가하세요" }),
-        el("div.empty__desc", { text: "날짜를 추가하고 가고 싶은 곳·먹고 싶은 곳·숙소·공항을 넣어보세요." })
+        el("div.empty__emoji", { html: "🏨" }),
+        el("div.empty__title", { text: "숙소부터 정해 볼까요?" }),
+        el("div.empty__desc", { text: "체크인 날짜와 몇 박인지 고르면 Day 1부터 일정이 한 번에 만들어져요." })
       ]));
-      viewEl.appendChild(el("button.btn.btn--block", { style: { marginTop: "18px" }, onclick: function () { TP.editor.openDayModal(); } }, ["+ 날짜 추가"]));
+      viewEl.appendChild(el("button.btn.btn--block", { style: { marginTop: "18px" }, onclick: addLodging }, ["숙소 추가하기"]));
+      viewEl.appendChild(el("button.btn.btn--block.btn--ghost", { style: { marginTop: "10px" }, onclick: function () { TP.editor.openDayModal(); } }, ["날짜만 추가"]));
       return;
     }
+
+    // 숙소 목록 — 기간이 정해진 숙소가 일정의 뼈대다
+    var stays = staysOf(trip);
+    viewEl.appendChild(el("div.section-title", null, [el("span", { text: "숙소" }), el("button.link-btn", { onclick: addLodging }, ["+ 추가"])]));
+    if (stays.length) {
+      viewEl.appendChild(el("div.list-card", null, stays.map(function (st) {
+        var s = st.stop, n = U.daysBetween(s.checkIn, s.checkOut);
+        return el("button.list-row", { onclick: function () { TP.editor.openStopModal(st.dayId, s.id); } }, [
+          el("span.list-row__icon", { html: "🏨" }),
+          el("span.list-row__main", null, [
+            el("span.list-row__title", { text: s.title || "숙소" }),
+            el("span.list-row__sub", { text: U.fmtDate(s.checkIn) + " → " + U.fmtDate(s.checkOut) })
+          ]),
+          el("span.list-row__tail", { text: n + "박" })
+        ]);
+      })));
+    } else {
+      viewEl.appendChild(el("button.list-card.list-card--empty", { onclick: addLodging }, ["🏨  숙소를 넣으면 날짜가 자동으로 채워져요"]));
+    }
+    viewEl.appendChild(el("div.section-title", null, [el("span", { text: "일정" }), el("button.link-btn", { onclick: function () { TP.editor.openDayModal(); } }, ["+ 날짜"])]));
 
     var myEpoch = epoch;
     trip.days.forEach(function (d, i) {
@@ -192,7 +212,8 @@
           el("div.day-card__date", { text: U.fmtDate(d.date) })
         ]),
         d.label ? el("div.day-card__label", { text: d.label }) : null,
-        el("div.day-card__foot", null, [weatherChip(d, myEpoch), el("div.day-card__count", { text: d.stops.length + "곳" })])
+        stayChip(trip, d),
+        el("div.day-card__foot", null, [weatherChip(d, myEpoch), el("div.day-card__count", { text: d.stops.length ? d.stops.length + "곳" : "비어 있음" })])
       ]);
       (function (dd, no) {
         card.appendChild(el("button.card-del", {
@@ -202,7 +223,23 @@
       })(d, i + 1);
       viewEl.appendChild(card);
     });
-    viewEl.appendChild(el("button.btn.btn--block.btn--ghost", { style: { marginTop: "6px" }, onclick: function () { TP.editor.openDayModal(); } }, ["+ 날짜 추가"]));
+  }
+
+  /* 여행의 숙소들(기간이 있는 것만) — 체크인 순 */
+  function staysOf(trip) {
+    var out = [];
+    trip.days.forEach(function (d) { d.stops.forEach(function (s) { if (s.type === "lodging" && s.checkIn && s.checkOut) out.push({ stop: s, dayId: d.id }); }); });
+    out.sort(function (a, b) { return a.stop.checkIn < b.stop.checkIn ? -1 : a.stop.checkIn > b.stop.checkIn ? 1 : 0; });
+    return out;
+  }
+  function stayChip(trip, d) {
+    var st = store.stayOn(trip, d.date);
+    if (!st) return null;
+    var t = st.stop.title || "숙소";
+    return el("div.day-card__stay", { text: st.checkout ? "🧳 체크아웃 · " + t : "🏨 " + t + " · " + st.night + "/" + st.nights + "박" });
+  }
+  function addLodging() {
+    TP.editor.openStopModal(null, null, { type: "lodging" });
   }
 
   function weatherChip(day, myEpoch) {
@@ -210,7 +247,7 @@
     W.getDayWeather(day).then(function (wx) {
       if (myEpoch !== epoch || !chip.isConnected) return;
       chip.innerHTML = "";
-      if (!wx.available) { chip.appendChild(document.createTextNode("🌡️ –")); return; }
+      if (!wx.available) { chip.remove(); return; }   // 예보 없는 날은 빈 칩 대신 아무것도 안 보인다
       chip.appendChild(document.createTextNode(wx.emoji + " "));
       chip.appendChild(el("span", { text: Math.round(wx.tmax) + "°/" + Math.round(wx.tmin) + "°" }));
       if (wx.precip != null && wx.precip > 0) chip.appendChild(el("span.mm", { text: " " + wx.precip + "mm" }));
@@ -227,10 +264,20 @@
       el("div.day-hero__main", null, [
         el("div.day-hero__eyebrow", { text: "DAY " + (idx + 1) }),
         el("div.day-hero__title", { text: day.label || U.fmtDate(day.date) }),
-        el("div.day-hero__date", { text: U.fmtDate(day.date) })
+        day.label ? el("div.day-hero__date", { text: U.fmtDate(day.date) }) : null   // 제목이 곧 날짜면 두 번 적지 않는다
       ]),
       el("button.day-hero__edit", { title: "날짜·코스 편집", onclick: function () { TP.editor.openDayModal(day.id); } }, ["✎ 편집"])
     ]));
+
+    var stayNow = store.stayOn(store.activeTrip(), day.date);
+    if (stayNow) {
+      var sst = stayNow.stop;
+      viewEl.appendChild(el("div.stay-pill", null, [
+        el("span", { html: stayNow.checkout ? "🧳" : "🏨" }),
+        el("span", { text: stayNow.checkout ? "오늘 체크아웃 · " + (sst.title || "숙소") : "오늘 밤 · " + (sst.title || "숙소") }),
+        el("span.stay-pill__tail", { text: stayNow.checkout ? "" : stayNow.night + "/" + stayNow.nights + "박" })
+      ]));
+    }
 
     var wxSlot = el("div"); wxSlot.appendChild(R.weatherBanner(null));
     var rainSlot = el("div");
@@ -275,7 +322,10 @@
       el("button.btn.btn--ghost.btn--sm", { style: { flex: "1" }, onclick: function () { optimize(day); } }, ["🧭 동선 최적화"]),
       el("button.btn.btn--ghost.btn--sm", { style: { flex: "1" }, onclick: function () { allDirections(day); } }, ["🗺 전체 길찾기"])
     ]));
-    viewEl.appendChild(el("button.btn.btn--block", { style: { marginTop: "10px" }, onclick: function () { TP.editor.openStopModal(day.id); } }, ["+ 장소 추가"]));
+    // 토스식 하단 고정 버튼 — 이 화면에서 가장 자주 하는 일
+    viewEl.appendChild(el("div.cta-bar", null, [
+      el("button.btn.btn--block.btn--lg", { onclick: function () { TP.editor.openStopModal(day.id); } }, ["장소 추가"])
+    ]));
   }
 
   function drawTimeline(day, idx, target, rainy, schedule) {

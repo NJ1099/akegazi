@@ -8,7 +8,7 @@
   /* 짧은 키 ↔ 풀 키 */
   var KMAP = {
     y: "type", n: "title", u: "subtitle", a: "address", la: "lat", lo: "lon",
-    tm: "time", dl: "durationLabel", at: "arriveTime", dp: "departTime", sm: "stayMin",
+    tm: "time", dl: "durationLabel", at: "arriveTime", dp: "departTime", sm: "stayMin", ci: "checkIn", cx: "checkOut",
     ab: "arriveBy", fa: "fareAmount", ca: "costAmount", pm: "payment", cc: "costCategory",
     in: "indoor", oh: "openHours", cd: "closingDays",
     cn: "closingNote", rs: "reservation", rn: "reservationNote", fx: "fixed",
@@ -30,6 +30,8 @@
     if (s.arriveTime) c.at = s.arriveTime;
     if (s.departTime) c.dp = s.departTime;
     if (typeof s.stayMin === "number") c.sm = s.stayMin;
+    if (s.checkIn) c.ci = s.checkIn;
+    if (s.checkOut) c.cx = s.checkOut;
     if (s.arriveBy) c.ab = s.arriveBy;
     if (typeof s.fareAmount === "number") c.fa = s.fareAmount;
     if (typeof s.costAmount === "number") c.ca = s.costAmount;

@@ -60,9 +60,12 @@
   }
 
   /* ---------- 장소 모달 ---------- */
-  function openStopModal(dayId, stopId) {
-    var existing = stopId ? store.stop(dayId, stopId) : null;
-    var f = Object.assign(store.defaultStop(), existing ? JSON.parse(JSON.stringify(existing)) : {});
+  /* opts.type: 새 장소의 기본 종류(여행 화면의 '숙소 추가'는 dayId 없이 lodging 으로 연다 —
+   * 숙박 기간을 고르면 그 날짜들이 Day 로 만들어지고 체크인 날에 숙소가 들어간다). */
+  function openStopModal(dayId, stopId, opts) {
+    opts = opts || {};
+    var existing = (stopId && dayId) ? store.stop(dayId, stopId) : null;
+    var f = Object.assign(store.defaultStop(), existing ? JSON.parse(JSON.stringify(existing)) : (opts.type ? { type: opts.type } : {}));
     var pickMap = null;
     var trip = store.activeTrip();
     var cur = (trip && trip.currency) || "JPY";
@@ -75,13 +78,13 @@
     }
 
     modal(function (box, close) {
-      box.appendChild(el("div.modal__title", { text: existing ? "장소 편집" : "장소 추가" }));
-      box.appendChild(el("div.modal__sub", { text: "가고 싶은 곳 · 먹고 싶은 곳 · 숙소 · 공항 무엇이든 추가하세요." }));
+      box.appendChild(el("div.modal__title", { text: existing ? "장소 편집" : (f.type === "lodging" && !dayId ? "숙소 추가" : "장소 추가") }));
 
       // 이름 (입력하면 위치 자동 검색)
       var results = el("div.geo-results");
       var titleInput = el("input.input", { value: f.title, placeholder: "예: 도쿄타워, 이치란 라멘", autocomplete: "off", oninput: function () { f.title = this.value; } });
-      box.appendChild(field("장소 이름", el("div", null, [titleInput, results]), "이름을 적으면 위치를 자동으로 검색해요"));
+      var pickedLabel = el("div.geo-picked", { html: "" });
+      box.appendChild(field(f.type === "lodging" ? "어디서 묵나요?" : "어디에 가나요?", el("div", null, [titleInput, results, pickedLabel])));
 
       // 타입 칩
       var typeWrap = el("div.chips");
@@ -94,9 +97,44 @@
       });
       box.appendChild(field("종류", typeWrap));
 
+      // ----- 숙박 기간 (숙소 타입에서만) — 체크인 + 몇 박 → 그 날짜들이 Day 로 만들어진다 -----
+      var dayDate = (dayObj && dayObj.date) || "";
+      var firstDate = trip ? (trip.days.map(function (d) { return d.date; }).filter(Boolean).sort()[0] || "") : "";
+      if (!f.checkIn) f.checkIn = dayDate || firstDate || U.todayISO();
+      var nights = f.checkOut ? Math.max(1, U.daysBetween(f.checkIn, f.checkOut)) : 1;
+      var ciInput = el("input.input", { type: "date", value: f.checkIn, "aria-label": "체크인 날짜",
+        oninput: function () { f.checkIn = this.value; syncStay(); } });
+      var nightNo = el("span.stepper__val");
+      var stayLine = el("div.stay-line", { role: "status", "aria-live": "polite" });
+      function stepBtn(label, delta, aria) {
+        return el("button.stepper__btn", { type: "button", "aria-label": aria,
+          onclick: function () { nights = Math.max(1, Math.min(30, nights + delta)); syncStay(); } }, [label]);
+      }
+      function syncStay() {
+        nightNo.textContent = nights + "박";
+        if (!f.checkIn) { stayLine.textContent = "체크인 날짜를 골라 주세요"; return; }
+        var out = U.addDaysISO(f.checkIn, nights);
+        var missing = U.dateList(f.checkIn, out).filter(function (dt) {
+          return !(trip && trip.days.some(function (d) { return d.date === dt; }));
+        }).length;
+        stayLine.textContent = U.fmtDate(f.checkIn) + " → " + U.fmtDate(out) + " · " + nights + "박 " + (nights + 1) + "일"
+          + (missing ? " · 날짜 " + missing + "개가 일정에 추가돼요" : "");
+      }
+      var stayBox = field("며칠 묵나요?", el("div", null, [
+        el("div.stay-row", null, [
+          wrapLabeled("체크인", ciInput),
+          wrapLabeled("숙박", el("div.stepper", null, [stepBtn("−", -1, "하루 줄이기"), nightNo, stepBtn("+", 1, "하루 늘리기")]))
+        ]),
+        stayLine
+      ]));
+      box.appendChild(stayBox);
+      syncStay();
+
       // ----- 날짜 이동 (편집 모드 + 날짜가 2개 이상일 때만) -----
       // "이건 2일차로 미루자"를 삭제→재입력 없이. 저장 시 대상 날짜의 맨 뒤로 옮긴다.
-      var moveSel = null;
+      var timeField = null, costLabel = null;
+      var adv = el("div.more__body");     // '더 입력하기' 안쪽 — 자주 안 쓰는 항목은 여기로 접는다
+      var moveSel = null, moveField = null;
       if (existing && trip && trip.days.length > 1) {
         moveSel = el("select.select", { "aria-label": "이 장소를 옮길 날짜" });
         trip.days.forEach(function (d, i) {
@@ -105,7 +143,8 @@
           if (d.id === dayId) opt.selected = true;
           moveSel.appendChild(opt);
         });
-        box.appendChild(field("날짜", moveSel, "다른 날로 옮기면 입력한 내용 그대로 그 날 맨 뒤에 붙어요"));
+        moveField = field("날짜 옮기기", moveSel, "다른 날로 옮기면 입력한 내용 그대로 그 날 맨 뒤에 붙어요");
+        adv.appendChild(moveField);
       }
 
       // ----- 공항 시각 (공항 타입에서만 표시) -----
@@ -118,16 +157,19 @@
       box.appendChild(airportBox);
       function syncType() {
         airportBox.style.display = (f.type === "airport") ? "" : "none";
+        stayBox.style.display = (f.type === "lodging") ? "" : "none";
+        if (timeField) timeField.style.display = (f.type === "lodging") ? "none" : "";   // 숙소는 날짜가 곧 일정 — 시각 칸은 접는다
+        if (costLabel) costLabel.textContent = (f.type === "lodging") ? "숙박비는 얼마인가요?" : "얼마 쓰나요?";
+        if (moveField) moveField.style.display = (f.type === "lodging") ? "none" : "";   // 숙소는 체크인이 날짜를 정한다
         if (stayInput) stayInput.placeholder = "기본 " + TP.geo.defaultDwell(f.type) + "분";
       }
       syncType();
 
       // 현지명/부제
-      box.appendChild(field("현지명 · 부제 (선택)",
+      adv.appendChild(field("현지명 · 부제",
         el("input.input", { value: f.subtitle, placeholder: "예: 東京タワー / Tokyo Tower", oninput: function () { f.subtitle = this.value; } })));
 
       // ----- 위치 (이름 입력 → 자동 검색 결과는 이름칸 아래 results에 표시) -----
-      var pickedLabel = el("div.geo-picked", { html: "" });
       function showPicked() {
         if (TP.geo.hasCoord(f)) {
           pickedLabel.textContent = "📍 좌표 설정됨 (" + f.lat.toFixed(4) + ", " + f.lon.toFixed(4) + ")" + (f.address ? " · " + f.address : "");
@@ -197,12 +239,12 @@
       }, ["지도에서 직접 선택"]);
       var reSearchBtn = el("button.btn.btn--ghost.btn--sm", { type: "button", style: { marginLeft: "8px" }, onclick: function () { searchSeq++; doSearch(); } }, ["🔎 이름으로 다시 검색"]);
 
-      box.appendChild(field("위치", el("div", null, [pickedLabel, el("div", { style: { marginTop: "8px" } }, [mapToggle, reSearchBtn]), mapBox]),
+      adv.appendChild(field("위치", el("div", null, [el("div", null, [mapToggle, reSearchBtn]), mapBox]),
         "이름으로 자동 검색되며, 안 맞으면 지도에서 직접 찍거나 다시 검색하세요"));
 
       // 주소
       var addrInput = el("input.input", { value: f.address, placeholder: "주소 (선택)", oninput: function () { f.address = this.value; } });
-      box.appendChild(field("주소 (선택)", addrInput));
+      adv.appendChild(field("주소", addrInput));
 
       // 시간 / 체류시간 / 소요시간
       var stayInput = el("input.input", {
@@ -210,12 +252,23 @@
         placeholder: "기본 " + TP.geo.defaultDwell(f.type) + "분",
         oninput: function () { var v = parseInt(this.value, 10); f.stayMin = (isFinite(v) && v >= 0) ? v : null; }
       });
-      box.appendChild(field("",
+      var costCtl = moneyDual(cur, homeCur, f.costAmount, function (v) { f.costAmount = v; });   // 양방향 통화 입력
+      timeField = field("",
         el("div.row", null, [
-          wrapLabeled("도착 시간", timeInput(f.time, function (v) { f.time = v; })),
-          wrapLabeled("체류 시간(분)", stayInput)
-        ]), "체류 시간은 일정 ETA 계산에 사용돼요 (비우면 종류별 기본값)"));
-      box.appendChild(field("소요시간 표시 (선택)",
+          wrapLabeled("몇 시에?", timeInput(f.time, function (v) { f.time = v; })),
+          wrapLabeled("머무는 시간(분)", stayInput)
+        ]));
+      box.appendChild(timeField);
+      costLabel = el("label", { text: "얼마 쓰나요?" });
+      box.appendChild(el("div.field", null, [costLabel, costCtl]));
+      syncType();
+
+      // ----- 여기부터 '더 입력하기'(접힘) — 한 화면에 20칸이 펼쳐져 있던 것을 필수만 남겼다 -----
+      var more = el("details.more", null, [
+        el("summary.more__sum", null, ["더 입력하기", el("span.more__hint", { text: "위치 · 교통 · 영업시간 · 휴무 · 예약 · 메모" })]),
+        adv
+      ]);
+      adv.appendChild(field("소요시간 표시",
         el("input.input", { value: f.durationLabel, placeholder: "예: 약 60~90분", oninput: function () { f.durationLabel = this.value; } })));
 
       // ----- 이동수단 (이전 → 여기): 첫 장소가 아니면 -----
@@ -247,7 +300,7 @@
         var staleNote = staleFare ? el("div.hint.hint--warn", {
           text: "순서가 바뀌어 직전 장소가 ‘" + (prevStop.title || "이전 장소") + "’ 으로 달라졌어요. 적어 둔 금액은 예전 구간 기준이라 예산에는 예상값이 쓰이고 있어요 — 확인 후 저장하면 지금 구간으로 반영돼요."
         }) : null;
-        box.appendChild(field("이전 장소 → 여기 이동수단",
+        adv.appendChild(field("이전 장소 → 여기 이동수단",
           el("div", null, [modeWrap, el("div", { style: { marginTop: "8px" } }, [
             el("label", { style: { display: "block", fontSize: "12px", fontWeight: "800", color: "var(--text-2)", marginBottom: "6px" }, text: "교통비 (비우면 예상값)" }),
             fareCtl, staleNote
@@ -256,7 +309,6 @@
       }
 
       // ----- 경비 (금액 양방향 + 분류 + 결제수단) -----
-      var costCtl = moneyDual(cur, homeCur, f.costAmount, function (v) { f.costAmount = v; });   // 양방향 통화 입력
       var payWrap = el("div.chips");
       [["credit", "💳 신용카드"], ["debit", "💳 체크카드"], ["cash", "💵 현금"], ["", "없음"]].forEach(function (po) {
         payWrap.appendChild(el("button.chip" + ((f.payment || "") === po[0] ? ".is-on" : ""), {
@@ -301,17 +353,12 @@
         }, ["➕ 직접 추가"]));
       }
       renderCatChips();
-      box.appendChild(field("💳 경비 (선택)",
-        el("div", null, [
-          costCtl,
-          el("div", { style: { marginTop: "8px" } }, [wrapLabeled("분류", catWrap)]),
-          el("div", { style: { marginTop: "8px" } }, [wrapLabeled("결제수단", payWrap)])
-        ]),
-        "분류·결제수단별 + 환산까지 예산에 반영돼요"));
+      adv.appendChild(field("경비 분류", catWrap));
+      adv.appendChild(field("결제수단", payWrap));
 
       // 영업시간 (이름으로 검색해 선택하면 구글 영업시간 자동 채움)
       var openHoursInput = el("input.input", { value: f.openHours, placeholder: "예: 11:00~23:00 (L.O.22:00)", oninput: function () { f.openHours = this.value; } });
-      box.appendChild(field("영업시간 (선택)", openHoursInput, "이름으로 검색해 선택하면 구글 영업시간이 자동으로 채워져요 (직접 수정 가능)"));
+      adv.appendChild(field("영업시간", openHoursInput, "이름으로 검색해 선택하면 구글 영업시간이 자동으로 채워져요 (직접 수정 가능)"));
 
       // 휴무 요일
       var wdWrap = el("div.chips");
@@ -326,8 +373,8 @@
           }
         }, [w]));
       });
-      box.appendChild(field("휴무 요일 (선택)", wdWrap, "이 요일에 방문 일정이 잡히면 자동 경고"));
-      box.appendChild(field("휴무 비고 (선택)",
+      adv.appendChild(field("휴무 요일", wdWrap, "이 요일에 방문 일정이 잡히면 자동 경고"));
+      adv.appendChild(field("휴무 비고",
         el("input.input", { value: f.closingNote, placeholder: "예: 부정기 휴무 / 연중무휴 / 24시간", oninput: function () { f.closingNote = this.value; } })));
 
       // 예약
@@ -338,8 +385,8 @@
           onclick: function () { f.reservation = r[0]; U.$$(".chip", resvWrap).forEach(function (x) { x.classList.remove("is-on"); }); this.classList.add("is-on"); }
         }, ["예약 " + r[1]]));
       });
-      box.appendChild(field("예약", resvWrap));
-      box.appendChild(field("예약 비고 (선택)",
+      adv.appendChild(field("예약", resvWrap));
+      adv.appendChild(field("예약 비고",
         el("input.input", { value: f.reservationNote, placeholder: "예: 6/14 18:00 예약 완료", oninput: function () { f.reservationNote = this.value; } })));
 
       // 실내/야외 + 토글들
@@ -351,14 +398,15 @@
           onclick: function () { f.indoor = o[2]; U.$$(".chip", indoorWrap).forEach(function (x) { x.classList.remove("is-on"); }); this.classList.add("is-on"); }
         }, [o[1]]));
       });
-      box.appendChild(field("실내 / 야외", indoorWrap, "비 오는 날 실내 위주 추천에 사용돼요"));
+      adv.appendChild(field("실내 / 야외", indoorWrap, "비 오는 날 실내 위주 추천에 사용돼요"));
 
-      box.appendChild(toggleRow("고정 일정", "시간이 정해진 일정(동선 최적화 시 자리 고정)", f.fixed, function (v) { f.fixed = v; }));
-      box.appendChild(toggleRow("인증포인트 / 포토스팟", "사진 찍기 좋은 곳으로 표시", f.photoSpot, function (v) { f.photoSpot = v; }));
+      adv.appendChild(toggleRow("고정 일정", "시간이 정해진 일정(동선 최적화 시 자리 고정)", f.fixed, function (v) { f.fixed = v; }));
+      adv.appendChild(toggleRow("인증포인트 / 포토스팟", "사진 찍기 좋은 곳으로 표시", f.photoSpot, function (v) { f.photoSpot = v; }));
 
       // 메모
-      box.appendChild(field("메모 · 팁 (선택)",
+      adv.appendChild(field("메모 · 팁",
         el("textarea.textarea", { placeholder: "예: 첫 도보 필수 인증샷. 도착 즉시 입장.", oninput: function () { f.note = this.value; } }, [f.note])));
+      box.appendChild(more);
 
       // 액션
       box.appendChild(el("div.modal__actions", null, [
@@ -367,16 +415,27 @@
             if (!f.title.trim()) { U.toast("장소 이름을 입력하세요"); titleInput.focus(); return; }
             // 편집창에서 금액을 확인하고 저장했다면, 그 값을 "지금 구간"의 요금으로 인정한다.
             if (prevStop && typeof f.fareAmount === "number") f.fareFrom = prevStop.id;
-            var moved = "";
+            var moved = "", target = dayId;
+            if (f.type === "lodging") {
+              // 숙박 기간의 날짜들을 보장하고(없는 날만 생성 — 줄여도 기존 날짜는 지우지 않는다), 숙소는 체크인 날에 둔다
+              if (!f.checkIn) { U.toast("체크인 날짜를 고르세요"); ciInput.focus(); return; }
+              f.checkOut = U.addDaysISO(f.checkIn, nights);
+              var dmap = store.ensureDays(U.dateList(f.checkIn, f.checkOut));
+              target = dmap[f.checkIn] || dayId;
+              moved = nights + "박 " + (nights + 1) + "일 숙소를 넣었어요";
+            } else { f.checkIn = ""; f.checkOut = ""; }
+            if (!target) { U.toast("날짜를 먼저 추가하세요"); return; }
             if (existing) {
               store.updateStop(dayId, stopId, f);
-              if (moveSel && moveSel.value && moveSel.value !== dayId) {
-                var toIdx = store.dayIndex(moveSel.value);
-                if (store.moveStopToDay(dayId, stopId, moveSel.value)) moved = "Day " + (toIdx + 1) + "(으)로 옮겼어요";
+              var toDay = (f.type === "lodging") ? target : (moveSel && moveSel.value);
+              if (toDay && toDay !== dayId) {
+                var toIdx = store.dayIndex(toDay);
+                if (store.moveStopToDay(dayId, stopId, toDay) && f.type !== "lodging") moved = "Day " + (toIdx + 1) + "(으)로 옮겼어요";
               }
-            } else store.addStop(dayId, f);
+            } else store.addStop(target, f);
             close();
             U.toast(moved || (existing ? "수정했어요" : "추가했어요"));
+            if (opts.onSaved) opts.onSaved(target);
           }
         }, [existing ? "저장" : "추가"]),
         el("button.btn.btn--block.btn--ghost", { onclick: close }, ["취소"])
@@ -565,10 +624,10 @@
 
     modal(function (box, close) {
       box.appendChild(el("div.modal__title", { text: existing ? "여행 정보 편집" : "새 여행" }));
-      box.appendChild(el("div.modal__sub", { text: existing ? "이름·지역·통화를 수정해요. 날짜·공항은 일정에서 편집하세요." : "지역·기간을 넣으면 날짜와 도착/출발 공항(고정)을 자동으로 만들어 드려요." }));
+      box.appendChild(el("div.modal__sub", { text: existing ? "이름·지역·통화를 수정해요." : "어디로 가는지만 적어도 돼요. 날짜는 숙소를 고르면 자동으로 채워져요." }));
 
       var titleInput = el("input.input", { value: f.title, placeholder: "예: 후쿠오카 가족여행", oninput: function () { f.title = this.value; } });
-      box.appendChild(field("여행 이름", titleInput));
+      box.appendChild(field("여행 이름", titleInput, "비워 두면 ‘지역 + 여행’"));
 
       // 통화가 26개라 칩으로는 화면을 덮는다 → 선택 목록. 고르면 현재 환율 한 줄을 바로 보여 준다.
       function curOption(code) { var c = TP.money.cfg(code); return el("option", { value: code, text: c.sym.trim() + "  " + c.name + " (" + code + ")" }); }
@@ -593,21 +652,27 @@
         value: f.region, placeholder: "예: 방콕 / 오사카 / 다낭",
         oninput: function () { f.region = this.value; if (!userPickedCur) { var rec = TP.money.currencyForRegion(f.region); if (rec) { f.currency = rec; curSelect.value = rec; showRate(); } } }
       });
-      box.appendChild(field("지역", regionInput, "지역을 넣으면 통화를 자동 추천해요"));
-      box.appendChild(field("통화", curSelect));
-      box.appendChild(field("내 통화 (환산 표시)", el("div", null, [homeSelect, rateLine]), "통화와 다르면 금액 옆에 ≈ 환산값을 보여줘요(실시간 환율)"));
+      // 순서: 지역 → 이름 (지역만 적으면 이름은 'OO 여행'으로 채워진다)
+      box.insertBefore(field("어디로 가나요?", regionInput), titleInput.parentNode);
+      var tripAdv = el("div.more__body");
+      tripAdv.appendChild(field("통화", curSelect, "지역을 넣으면 자동으로 골라져요"));
+      tripAdv.appendChild(field("내 통화 (환산 표시)", el("div", null, [homeSelect, rateLine])));
       showRate();
 
       if (!existing) {
-        box.appendChild(field("", el("div.row", null, [
-          wrapLabeled("시작일", el("input.input", { type: "date", value: f.start, oninput: function () { f.start = this.value; } })),
-          wrapLabeled("종료일", el("input.input", { type: "date", value: f.end, oninput: function () { f.end = this.value; } }))
-        ]), "이 기간의 날짜들이 자동으로 만들어져요"));
-        box.appendChild(field("✈️ 비행기 (선택)", el("div.row", null, [
+        box.appendChild(field("언제 가나요? (선택)", el("div.row", null, [
+          wrapLabeled("가는 날", el("input.input", { type: "date", value: f.start, oninput: function () { f.start = this.value; } })),
+          wrapLabeled("오는 날", el("input.input", { type: "date", value: f.end, oninput: function () { f.end = this.value; } }))
+        ])));
+        tripAdv.appendChild(field("✈️ 비행기 시각", el("div.row", null, [
           wrapLabeled("도착 시각(첫날)", timeInput(f.arriveTime, function (v) { f.arriveTime = v; })),
           wrapLabeled("출발 시각(마지막날)", timeInput(f.departTime, function (v) { f.departTime = v; }))
         ]), "넣으면 첫날 도착공항·마지막날 출발공항을 고정 일정으로 자동 추가(편집 가능)"));
       }
+      box.appendChild(el("details.more", { open: !!existing }, [
+        el("summary.more__sum", null, ["더 설정하기", el("span.more__hint", { text: existing ? "통화 · 환율" : "통화 · 환율 · 비행기 시각" })]),
+        tripAdv
+      ]));
 
       box.appendChild(el("div.modal__actions", null, [
         el("button.btn.btn--block", {

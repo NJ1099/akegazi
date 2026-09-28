@@ -95,6 +95,21 @@
     d.setDate(d.getDate() + n);
     return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
   }
+  /* 두 날짜 사이 일수(b - a). 서머타임 경계에서도 반올림으로 정수가 된다. */
+  function daysBetween(a, b) {
+    var x = parseDate(a), y = parseDate(b);
+    if (!x || !y) return 0;
+    return Math.round((y - x) / 86400000);
+  }
+  /* a~b(포함) 날짜 목록. 역순이면 뒤집고, 최대 90일로 자른다. */
+  function dateList(a, b) {
+    if (!parseDate(a)) return [];
+    if (!parseDate(b)) b = a;
+    if (b < a) { var t = a; a = b; b = t; }
+    var out = [], iso = a;
+    while (out.length < 90) { out.push(iso); if (iso >= b) break; iso = addDaysISO(iso, 1); }
+    return out;
+  }
   function daysFromToday(s) {
     var d = parseDate(s); if (!d) return null;
     var t = new Date(); t.setHours(0, 0, 0, 0);
@@ -133,7 +148,7 @@
     $: $, $$: $$, el: el, esc: esc, uid: uid, debounce: debounce,
     parseDate: parseDate, weekdayKo: weekdayKo, weekdayIdx: weekdayIdx,
     fmtDate: fmtDate, todayISO: todayISO, addDaysISO: addDaysISO,
-    daysFromToday: daysFromToday, pad: pad, fetchJSON: fetchJSON,
+    daysFromToday: daysFromToday, daysBetween: daysBetween, dateList: dateList, pad: pad, fetchJSON: fetchJSON,
     toast: toast, clamp: clamp, WEEKDAYS: WEEKDAYS
   };
 })(window.TP = window.TP || {});

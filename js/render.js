@@ -128,6 +128,13 @@
         el("span.pin", { html: "✈️" }), el("span", { text: apBits.join("  ·  ") })
       ]));
     }
+    // 숙박 기간
+    if (stop.type === "lodging" && stop.checkIn && stop.checkOut) {
+      var nn = U.daysBetween(stop.checkIn, stop.checkOut);
+      card.appendChild(el("div.stop__addr", null, [
+        el("span.pin", { html: "🛏" }), el("span", { text: U.fmtDate(stop.checkIn) + " → " + U.fmtDate(stop.checkOut) + " · " + nn + "박" })
+      ]));
+    }
     // 주소
     if (stop.address) {
       card.appendChild(el("div.stop__addr", null, [
@@ -171,14 +178,15 @@
     }
 
     // 액션
-    var dirLabel = prevStop ? "길찾기 (이전→여기)" : "길찾기";
+    var dirLabel = "길찾기";
     var actions = el("div.stop__actions", null, [
-      el("button.btn.btn--sm", {
+      el("button.stop__act", {
+        title: prevStop ? "이전 장소 → 여기 길찾기" : "길찾기",
         onclick: function (e) { e.stopPropagation(); openDir(prevStop, stop); }
-      }, ["🧭 " + dirLabel]),
-      el("button.btn.btn--sm.btn--ghost", {
+      }, [dirLabel]),
+      el("button.stop__act", {
         onclick: function (e) { e.stopPropagation(); openMap(stop); }
-      }, ["📍 지도"])
+      }, ["지도"])
     ]);
     card.appendChild(actions);
 

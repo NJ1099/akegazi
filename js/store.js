@@ -5,6 +5,7 @@
  *   Day   { id, date:'YYYY-MM-DD', label, stops: [Stop] }
  *   Stop  { id, type, title, subtitle, address, lat, lon, time, durationLabel,
  *           arriveTime, departTime, stayMin,            // 공항 도착/출발 시각 + 체류시간(분)
+ *           checkIn, checkOut,                          // 숙소 체크인/체크아웃 날짜(YYYY-MM-DD) — 숙박 기간
  *           arriveBy, fareAmount,                       // 이전→여기 이동수단 + 예상/입력 교통비
  *           costAmount, payment, costCategory,          // 경비 + 결제수단(credit/debit/cash) + 분류(food/ticket/lodging/shopping/etc)
  *           indoor, openHours, closingDays:[0..6], closingNote,
@@ -51,6 +52,7 @@
       id: uid(), type: "attraction", title: "", subtitle: "", address: "",
       lat: null, lon: null, time: "", durationLabel: "",
       arriveTime: "", departTime: "", stayMin: null,
+      checkIn: "", checkOut: "",
       arriveBy: "", fareAmount: null, fareFrom: "", costAmount: null, payment: "", costCategory: "",
       indoor: null, openHours: "", closingDays: [], closingNote: "",
       reservation: "none", reservationNote: "", fixed: false, photoSpot: false,
@@ -69,6 +71,9 @@
     s.time = clampText(s.time, 5);
     s.arriveTime = clampText(s.arriveTime, 5);
     s.departTime = clampText(s.departTime, 5);
+    // 숙박 기간: 엄격한 날짜만, 체크아웃은 체크인 다음 날 이후만(0박·역순은 체크아웃을 비운다)
+    s.checkIn = isISODate(s.checkIn) ? s.checkIn : "";
+    s.checkOut = (s.checkIn && isISODate(s.checkOut) && s.checkOut > s.checkIn) ? s.checkOut : "";
     s.lat = (typeof s.lat === "number" && isFinite(s.lat) && s.lat >= -90 && s.lat <= 90) ? s.lat : null;
     s.lon = (typeof s.lon === "number" && isFinite(s.lon) && s.lon >= -180 && s.lon <= 180) ? s.lon : null;
     // 체류시간(분): 0 이상 정수만, 아니면 null(타입별 기본값 사용)
@@ -221,6 +226,35 @@
     var d = defaultDay(Object.assign({ date: (partial && partial.date) || nextDate() }, partial));
     t.days.push(d); t.days.sort(byDate); notify(); return d;
   }
+  /* 날짜 목록을 보장한다 — 없는 날짜만 새로 만들고, 있는 날짜는 건드리지 않는다.
+   * 숙소 기간(9/28~9/30)을 고르면 Day1~3 이 한 번에 생기는 흐름에 쓴다. 날짜를 지우지는 않으므로
+   * 기간을 줄여도 이미 넣어 둔 일정이 사라지지 않는다. { 'YYYY-MM-DD': dayId } 를 돌려준다. */
+  function ensureDays(dates) {
+    var t = _t(); if (!t) return {};
+    var map = {}, added = 0;
+    t.days.forEach(function (d) { if (d.date && !map[d.date]) map[d.date] = d.id; });
+    (dates || []).forEach(function (dt) {
+      if (!isISODate(dt) || map[dt] || t.days.length >= MAX_DAYS) return;
+      var d = defaultDay({ date: dt }); t.days.push(d); map[dt] = d.id; added++;
+    });
+    if (added) { t.days.sort(byDate); notify(); }
+    return map;
+  }
+  /* 그 날짜에 묵는 숙소 — { stop, night(몇 번째 밤), nights(총 박수) } 또는 체크아웃 날이면 { stop, checkout:true } */
+  function stayOn(trip, date) {
+    if (!trip || !date) return null;
+    var out = null;
+    (trip.days || []).forEach(function (d) {
+      (d.stops || []).forEach(function (s) {
+        if (out && !out.checkout) return;                 // 묵는 숙소가 체크아웃보다 우선
+        if (s.type !== "lodging" || !s.checkIn || !s.checkOut) return;
+        var nights = TP.util.daysBetween(s.checkIn, s.checkOut);
+        if (date >= s.checkIn && date < s.checkOut) out = { stop: s, night: TP.util.daysBetween(s.checkIn, date) + 1, nights: nights };
+        else if (date === s.checkOut && !out) out = { stop: s, checkout: true, nights: nights };
+      });
+    });
+    return out;
+  }
   function updateDay(id, patch) { var t = _t(); var d = day(id); if (!d || !t) return; Object.assign(d, patch); if ("date" in patch) t.days.sort(byDate); notify(); }
   function removeDay(id) { var t = _t(); if (!t) return; t.days = t.days.filter(function (d) { return d.id !== id; }); notify(); }
 
@@ -270,7 +304,7 @@
     addTrip: addTrip, addTripData: addTripData, updateTrip: updateTrip, removeTrip: removeTrip, reset: reset,
     customCats: customCats, addCustomCat: addCustomCat, removeCustomCat: removeCustomCat, usedCustomCats: usedCustomCats,
     setTitle: setTitle, day: day, dayAt: dayAt, dayIndex: dayIndex, stop: stop,
-    addDay: addDay, updateDay: updateDay, removeDay: removeDay,
+    addDay: addDay, ensureDays: ensureDays, stayOn: stayOn, updateDay: updateDay, removeDay: removeDay,
     addStop: addStop, updateStop: updateStop, removeStop: removeStop,
     reorderStops: reorderStops, moveStop: moveStop, moveStopToDay: moveStopToDay,
     exportJSON: exportJSON, importJSON: importJSON,

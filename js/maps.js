@@ -13,24 +13,8 @@
   var hasCoord = TP.geo.hasCoord;
   var DOT = ["#fb7185", "#fb923c", "#fbbf24", "#4ade80", "#34d399", "#60a5fa", "#a78bfa", "#f472b6"];
 
-  /* 다크 지도 스타일 (구글 Night mode 기반) */
-  var DARK_STYLE = [
-    { elementType: "geometry", stylers: [{ color: "#1a2236" }] },
-    { elementType: "labels.text.stroke", stylers: [{ color: "#0d1322" }] },
-    { elementType: "labels.text.fill", stylers: [{ color: "#9aa6c2" }] },
-    { featureType: "administrative", elementType: "geometry", stylers: [{ color: "#5b6480" }] },
-    { featureType: "administrative.locality", elementType: "labels.text.fill", stylers: [{ color: "#cdd6ee" }] },
-    { featureType: "poi", elementType: "labels.text.fill", stylers: [{ color: "#8b94b0" }] },
-    { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#16321f" }] },
-    { featureType: "poi.park", elementType: "labels.text.fill", stylers: [{ color: "#4ade80" }] },
-    { featureType: "road", elementType: "geometry", stylers: [{ color: "#2a3450" }] },
-    { featureType: "road", elementType: "labels.text.fill", stylers: [{ color: "#9aa6c2" }] },
-    { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#3a4666" }] },
-    { featureType: "transit", elementType: "geometry", stylers: [{ color: "#2a3450" }] },
-    { featureType: "transit.station", elementType: "labels.text.fill", stylers: [{ color: "#a78bfa" }] },
-    { featureType: "water", elementType: "geometry", stylers: [{ color: "#0e1830" }] },
-    { featureType: "water", elementType: "labels.text.fill", stylers: [{ color: "#4a5680" }] }
-  ];
+  /* 밝은 지도(토스 테마) — 기본 구글 스타일에서 상점 아이콘만 걷어 번호 핀이 묻히지 않게 */
+  var LIGHT_STYLE = [{ featureType: "poi.business", stylers: [{ visibility: "off" }] }];
 
   function fail(container, msg) {
     container.innerHTML = "";
@@ -45,7 +29,7 @@
 
   function baseOptions(extra) {
     var o = {
-      styles: DARK_STYLE, backgroundColor: "#0d1322",
+      styles: LIGHT_STYLE, backgroundColor: "#e5e8eb",
       mapTypeControl: false, streetViewControl: false, fullscreenControl: false,
       zoomControl: true, clickableIcons: false
     };

@@ -198,7 +198,10 @@
           if (mySeq !== searchSeq) return;   // 더 최신 검색이 시작됨 → stale 결과 무시
           results.innerHTML = "";
           revealResults();
-          if (!list.length) { results.appendChild(el("div.geo-result", { text: "결과가 없어요. 이름을 더 구체적으로 적어보세요." })); return; }
+          // 구글을 못 쓰는 상태(하루 한도 소진 등)면 무료 검색 결과라는 걸 알린다 — 한글 가게 이름은 거의 못 찾는다
+          var degraded = TP.gmaps && TP.gmaps.hasKey() && TP.gmaps.isBroken("places");
+          if (degraded) results.appendChild(el("div.geo-note", { text: "오늘 구글 검색 한도를 다 써서 무료 검색으로 찾고 있어요. 영어·현지어 이름이나 ‘지도에서 직접 선택’이 더 잘 맞아요." }));
+          if (!list.length) { results.appendChild(el("div.geo-result", { text: degraded ? "무료 검색에서 못 찾았어요." : "결과가 없어요. 이름을 더 구체적으로 적어보세요." })); return; }
           list.forEach(function (r) {
             results.appendChild(el("button.geo-result", {
               type: "button",
@@ -230,7 +233,7 @@
         var q = (titleInput.value || "").trim();
         if (q.length < 2) { searchSeq++; results.innerHTML = ""; return; }
         if (!TP.geo.hasCoord(f) || q !== openedTitle) doSearch();
-      }, 420);
+      }, 700);   // 글자마다가 아니라 타이핑을 멈춘 뒤 한 번 — 구글 검색은 하루 30회 한도라 아껴 쓴다
       titleInput.addEventListener("input", liveSearch);                                       // 이름 입력 → 자동 검색
       titleInput.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); doSearch(); } });
 

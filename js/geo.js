@@ -109,6 +109,9 @@
       // 권한·결제 거부는 다시 시도해도 같다 → 기억해 두고 다음 검색부터 바로 키리스로
       var msg = String((err && err.message) || err || "");
       if (/PERMISSION_DENIED|REQUEST_DENIED|BILLING|API_KEY|not authorized|not activated/i.test(msg)) TP.gmaps.markBroken("places", msg.slice(0, 80));
+      // 하루 한도 소진(429 RESOURCE_EXHAUSTED) — 한도를 30회/일로 묶어 두어서(HANDOFF 18차) 실제로 자주 난다.
+      // 그날은 다시 불러도 같으므로 기억해 두고(1시간) 바로 키리스로 간다. 화면은 isBroken 으로 안내한다.
+      else if (/RESOURCE_EXHAUSTED|Quota exceeded|429/i.test(msg)) TP.gmaps.markBroken("places", "QUOTA");
       throw err;
     });
   }

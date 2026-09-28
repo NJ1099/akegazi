@@ -1051,3 +1051,4 @@ body { background: var(--bg); }
 .geo-picked { justify-content: space-between; align-items: center; color: var(--text-2); }
 .geo-picked__txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .geo-picked__re { flex: 0 0 auto; font-size: 14px; }
+.geo-note { font-size: 13px; line-height: 1.5; color: var(--c-amber); background: var(--c-amber-bg); border-radius: 12px; padding: 10px 12px; }

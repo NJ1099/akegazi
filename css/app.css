@@ -1032,3 +1032,10 @@ body { background: var(--bg); }
 .trip-card .card-del { display: none; }   /* 여행 삭제는 여행 안 ⋯ 메뉴에서 */
 .more__sum { white-space: nowrap; }
 .more__hint { flex: 1 1 auto; min-width: 0; }
+
+/* 장소 창 — 종류 칩 한 줄 가로 스크롤 */
+.chips--scroll { flex-wrap: nowrap; overflow-x: auto; margin: 0 -22px; padding: 2px 22px 4px; scrollbar-width: none; }
+.chips--scroll::-webkit-scrollbar { display: none; }
+.chips--scroll .chip { flex: 0 0 auto; }
+.money-conv { min-height: 18px; margin-top: 6px; font-size: 13px; font-weight: 600; color: var(--text-3); }
+.modal__title + .field { margin-top: 12px; }

@@ -7,6 +7,8 @@
     ["attraction", "🗼 가고 싶은 곳"], ["food", "🍴 먹고 싶은 곳"], ["cafe", "☕ 카페"],
     ["activity", "🎡 체험"], ["lodging", "🏨 숙소"], ["transport", "🚆 이동"], ["airport", "✈️ 공항"]
   ];
+  var TYPE_SHORT = { attraction: "🗼 관광", food: "🍴 맛집", cafe: "☕ 카페", activity: "🎡 체험", lodging: "🏨 숙소", transport: "🚆 이동", airport: "✈️ 공항" };
+  var NAME_Q = { lodging: "어디서 묵나요?", food: "어디서 먹나요?", cafe: "어느 카페인가요?", airport: "어느 공항인가요?", transport: "어떻게 이동하나요?" };
   var RESV = [["none", "불필요"], ["recommended", "권장"], ["required", "필수"], ["done", "완료"]];
 
   /* ---------- 공용 모달 ---------- */
@@ -84,18 +86,23 @@
       var results = el("div.geo-results");
       var titleInput = el("input.input", { value: f.title, placeholder: "예: 도쿄타워, 이치란 라멘", autocomplete: "off", oninput: function () { f.title = this.value; } });
       var pickedLabel = el("div.geo-picked", { html: "" });
-      box.appendChild(field(f.type === "lodging" ? "어디서 묵나요?" : "어디에 가나요?", el("div", null, [titleInput, results, pickedLabel])));
 
-      // 타입 칩
-      var typeWrap = el("div.chips");
+      // 종류 칩 — 한 줄 가로 스크롤(7개가 세 줄로 접히던 것을 한 줄로)
+      var typeWrap = el("div.chips.chips--scroll", { role: "group", "aria-label": "종류" });
       TYPES.forEach(function (t) {
         var c = el("button.chip" + (f.type === t[0] ? ".is-on" : ""), {
-          type: "button",
-          onclick: function () { f.type = t[0]; U.$$(".chip", typeWrap).forEach(function (x) { x.classList.remove("is-on"); }); this.classList.add("is-on"); syncType(); }
-        }, [t[1]]);
+          type: "button", "aria-pressed": f.type === t[0] ? "true" : "false",
+          onclick: function () {
+            f.type = t[0];
+            U.$$(".chip", typeWrap).forEach(function (x) { x.classList.remove("is-on"); x.setAttribute("aria-pressed", "false"); });
+            this.classList.add("is-on"); this.setAttribute("aria-pressed", "true"); syncType();
+          }
+        }, [TYPE_SHORT[t[0]] || t[1]]);
         typeWrap.appendChild(c);
       });
-      box.appendChild(field("종류", typeWrap));
+      box.appendChild(el("div.field", null, [typeWrap]));
+      var nameLabel = el("label", { text: NAME_Q[f.type] || "어디에 가나요?" });
+      box.appendChild(el("div.field", null, [nameLabel, el("div", null, [titleInput, results, pickedLabel])]));
 
       // ----- 숙박 기간 (숙소 타입에서만) — 체크인 + 몇 박 → 그 날짜들이 Day 로 만들어진다 -----
       var dayDate = (dayObj && dayObj.date) || "";
@@ -158,6 +165,7 @@
       function syncType() {
         airportBox.style.display = (f.type === "airport") ? "" : "none";
         stayBox.style.display = (f.type === "lodging") ? "" : "none";
+        nameLabel.textContent = NAME_Q[f.type] || "어디에 가나요?";
         if (timeField) timeField.style.display = (f.type === "lodging") ? "none" : "";   // 숙소는 날짜가 곧 일정 — 시각 칸은 접는다
         if (costLabel) costLabel.textContent = (f.type === "lodging") ? "숙박비는 얼마인가요?" : "얼마 쓰나요?";
         if (moveField) moveField.style.display = (f.type === "lodging") ? "none" : "";   // 숙소는 체크인이 날짜를 정한다
@@ -252,15 +260,10 @@
         placeholder: "기본 " + TP.geo.defaultDwell(f.type) + "분",
         oninput: function () { var v = parseInt(this.value, 10); f.stayMin = (isFinite(v) && v >= 0) ? v : null; }
       });
-      var costCtl = moneyDual(cur, homeCur, f.costAmount, function (v) { f.costAmount = v; });   // 양방향 통화 입력
-      timeField = field("",
-        el("div.row", null, [
-          wrapLabeled("몇 시에?", timeInput(f.time, function (v) { f.time = v; })),
-          wrapLabeled("머무는 시간(분)", stayInput)
-        ]));
-      box.appendChild(timeField);
-      costLabel = el("label", { text: "얼마 쓰나요?" });
-      box.appendChild(el("div.field", null, [costLabel, costCtl]));
+      var costCtl = moneySimple(cur, homeCur, f.costAmount, function (v) { f.costAmount = v; });
+      timeField = wrapLabeled("몇 시에?", timeInput(f.time, function (v) { f.time = v; }));
+      costLabel = el("label", { style: { display: "block", fontSize: "12px", fontWeight: "800", color: "var(--text-2)", marginBottom: "6px" }, text: "얼마 쓰나요?" });
+      box.appendChild(el("div.field", null, [el("div.row", null, [timeField, el("div", null, [costLabel, costCtl])])]));
       syncType();
 
       // ----- 여기부터 '더 입력하기'(접힘) — 한 화면에 20칸이 펼쳐져 있던 것을 필수만 남겼다 -----
@@ -268,6 +271,7 @@
         el("summary.more__sum", null, ["더 입력하기", el("span.more__hint", { text: "위치 · 교통 · 영업시간 · 휴무 · 예약 · 메모" })]),
         adv
       ]);
+      adv.appendChild(field("머무는 시간(분)", stayInput, "일정 예상시각 계산에 써요 (비우면 종류별 기본값)"));
       adv.appendChild(field("소요시간 표시",
         el("input.input", { value: f.durationLabel, placeholder: "예: 약 60~90분", oninput: function () { f.durationLabel = this.value; } })));
 
@@ -526,6 +530,20 @@
     ]);
     node.destInput = dInput;
     return node;
+  }
+  // 금액 한 칸(여행 통화) + 아래 작은 글씨로 내 통화 환산 — 두 칸 양방향 입력은 교통비에만 남긴다
+  function moneySimple(destCur, homeCur, initialDest, onset) {
+    var c = TP.money.cfg(destCur);
+    var inp = el("input.input", { type: "number", min: "0", step: "any", inputmode: "decimal", value: (initialDest != null ? initialDest : ""), placeholder: c.sym.trim() + " 0", "aria-label": "금액 (" + c.name + ")" });
+    var conv = el("div.money-conv", { "aria-live": "polite" });
+    function draw() {
+      var v = parseFloat(inp.value);
+      conv.textContent = (isFinite(v) && v > 0 && homeCur && homeCur !== destCur) ? (TP.money.formatConv(v, destCur, homeCur) || "") : "";
+    }
+    inp.addEventListener("input", function () { var v = parseFloat(inp.value); onset((isFinite(v) && v >= 0) ? v : null); draw(); });
+    if (homeCur && homeCur !== destCur) TP.money.ensureRate(destCur, homeCur).then(function () { if (document.body.contains(inp)) draw(); });
+    draw();
+    return el("div", null, [inp, conv]);
   }
   function toggleRow(label, desc, value, onChange) {
     var input = el("input", { type: "checkbox", onchange: function () { onChange(this.checked); } });

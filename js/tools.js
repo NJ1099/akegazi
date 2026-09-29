@@ -74,7 +74,7 @@
     var planned = TP.render.tripBudget(trip).total;
 
     view.appendChild(el("div.trip-head", null, [
-      el("div.trip-head__title", { text: "쓴 돈", style: { cursor: "default" } }),
+      el("div.trip-head__title", { style: { cursor: "default" } }, ["쓴 돈", TP.help.btn("money")]),
       el("div.trip-head__meta", null, [el("span", { text: trip.title || "여행" })])
     ]));
 
@@ -184,7 +184,7 @@
     if (many && !f.split.length) f.split = trip.members.slice();
 
     TP.editor.modal(function (box, close) {
-      box.appendChild(el("div.modal__title", { text: existing ? "기록 고치기" : "쓴 돈 기록" }));
+      box.appendChild(el("div.modal__title", null, [existing ? "기록 고치기" : "쓴 돈 기록", TP.help.btn("expense")]));
       var c = M.cfg(cur);
       var amt = el("input.input.input--big", { type: "number", min: "0", step: "any", inputmode: "decimal", value: f.amount != null ? f.amount : "", placeholder: c.sym.trim() + " 0", "aria-label": "금액 (" + c.name + ")" });
       var conv = el("div.money-conv");
@@ -256,7 +256,7 @@
     var done = list.filter(function (p) { return p.done; }).length;
     var dd = dDayText(trip);
     view.appendChild(el("div.trip-head", null, [
-      el("div.trip-head__title", { text: "준비물", style: { cursor: "default" } }),
+      el("div.trip-head__title", { style: { cursor: "default" } }, ["준비물", TP.help.btn("pack")]),
       el("div.trip-head__meta", null, [el("span", { text: (dd ? dd + " · " : "") + done + " / " + list.length + " 챙김" })])
     ]));
     if (list.length) {

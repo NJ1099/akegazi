@@ -85,7 +85,7 @@
     }
 
     modal(function (box, close) {
-      box.appendChild(el("div.modal__title", { text: wishMode ? (existing ? "보관함 장소" : "보관함에 담기") : existing ? "장소 편집" : (f.type === "lodging" && !dayId ? "숙소 추가" : "장소 추가") }));
+      box.appendChild(el("div.modal__title", null, [wishMode ? (existing ? "보관함 장소" : "보관함에 담기") : existing ? "장소 편집" : (f.type === "lodging" && !dayId ? "숙소 추가" : "장소 추가"), TP.help.btn("stop")]));
 
       // 이름 (입력하면 위치 자동 검색)
       var results = el("div.geo-results");
@@ -711,7 +711,7 @@
     var userPickedCur = !!existing;   // 기존 여행은 사용자가 정한 통화로 간주(자동추천 덮어쓰기 방지)
 
     modal(function (box, close) {
-      box.appendChild(el("div.modal__title", { text: existing ? "여행 정보 편집" : "새 여행" }));
+      box.appendChild(el("div.modal__title", null, [existing ? "여행 정보 편집" : "새 여행", TP.help.btn("trip")]));
       box.appendChild(el("div.modal__sub", { text: existing ? "이름·지역·통화를 수정해요." : "어디로 가는지만 적어도 돼요. 날짜는 숙소를 고르면 자동으로 채워져요." }));
 
       var titleInput = el("input.input", { value: f.title, placeholder: "예: 후쿠오카 가족여행", oninput: function () { f.title = this.value; } });

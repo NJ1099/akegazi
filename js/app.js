@@ -116,7 +116,7 @@
   function renderHome() {
     var list = store.trips();
     viewEl.appendChild(el("div.trip-head", null, [
-      el("div.trip-head__title", { text: "내 여행", style: { cursor: "default" } }),
+      el("div.trip-head__title", { style: { cursor: "default" } }, ["내 여행", TP.help.btn("home")]),
       el("div.trip-head__meta", null, [el("span", { text: list.length ? list.length + "개의 여행" : "나라·일정별로 여행을 만들어 관리하세요" })])
     ]));
 
@@ -201,6 +201,7 @@
     var goDay = function () { location.hash = "#/trip/" + t.id + "/day/" + d.id; };
     var head = el("div.today__head", null, [
       el("span.today__eyebrow", { text: "오늘 · " + (t.title || "여행") + " Day " + (info.idx + 1) }),
+      TP.help.btn("today"),
       el("button.link-btn", { onclick: goDay }, ["일정 보기 ›"])
     ]);
     if (!d.stops.length) {
@@ -280,7 +281,7 @@
 
     // 숙소 목록 — 기간이 정해진 숙소가 일정의 뼈대다
     var stays = staysOf(trip);
-    viewEl.appendChild(el("div.section-title", null, [el("span", { text: "숙소" }), el("button.link-btn", { onclick: addLodging }, ["+ 추가"])]));
+    viewEl.appendChild(el("div.section-title", null, [el("span", null, ["숙소", TP.help.btn("lodging")]), el("button.link-btn", { onclick: addLodging }, ["+ 추가"])]));
     if (stays.length) {
       viewEl.appendChild(el("div.list-card", null, stays.map(function (st) {
         var s = st.stop, n = U.daysBetween(s.checkIn, s.checkOut);
@@ -296,7 +297,7 @@
     } else {
       viewEl.appendChild(el("button.list-card.list-card--empty", { onclick: addLodging }, ["🏨  숙소를 넣으면 날짜가 자동으로 채워져요"]));
     }
-    viewEl.appendChild(el("div.section-title", null, [el("span", { text: "일정" }), el("button.link-btn", { onclick: function () { TP.editor.openDayModal(); } }, ["+ 날짜"])]));
+    viewEl.appendChild(el("div.section-title", null, [el("span", null, ["일정", TP.help.btn("days")]), el("button.link-btn", { onclick: function () { TP.editor.openDayModal(); } }, ["+ 날짜"])]));
 
     var myEpoch = epoch;
     trip.days.forEach(function (d, i) {
@@ -322,7 +323,7 @@
     // 보관함 — 날짜를 아직 안 정한 장소. 누르면 편집창의 「언제 갈까요?」에서 날짜로 보낸다.
     var wish = trip.wish || [];
     viewEl.appendChild(el("div.section-title", null, [
-      el("span", { text: "보관함" + (wish.length ? " " + wish.length : "") }),
+      el("span", null, ["보관함" + (wish.length ? " " + wish.length : ""), TP.help.btn("wish")]),
       el("button.link-btn", { onclick: function () { TP.editor.openStopModal(null, null, { wish: true }); } }, ["+ 담기"])
     ]));
     if (wish.length) {
@@ -394,7 +395,7 @@
     ensureRoads(store.routeOf(store.activeTrip(), day));   // 구글 실거리 비동기 로드(교통비 정확도)
     viewEl.appendChild(el("div.day-hero", null, [
       el("div.day-hero__main", null, [
-        el("div.day-hero__eyebrow", { text: "DAY " + (idx + 1) }),
+        el("div.day-hero__eyebrow", null, ["DAY " + (idx + 1), TP.help.btn("day")]),
         el("div.day-hero__title", { text: day.label || U.fmtDate(day.date) }),
         day.label ? el("div.day-hero__date", { text: U.fmtDate(day.date) }) : null   // 제목이 곧 날짜면 두 번 적지 않는다
       ]),

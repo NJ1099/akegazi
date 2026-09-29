@@ -10,7 +10,7 @@
  *   🔴 JS/CSS 를 바꾸면 index.html 의 ?v=N 도 같은 숫자로 올릴 것 — 워커가 페이지를 제어하지 않는 순간
  *   (첫 방문·워커 교체 중)에는 브라우저 HTTP 캐시(max-age=600)가 옛 파일을 그대로 내준다(2026-09-28 실측).
  */
-var CACHE = "akegazi-v24";
+var CACHE = "akegazi-v25";
 
 /* 앱 셸 프리캐시 — 설치 시 한 번에 담아 둔다.
  * 이유: network-first 는 "한 번이라도 받아본" 리소스만 캐시에 남는다. 여행 앱은 비행기 모드/
@@ -21,7 +21,7 @@ var SHELL = [
   "./", "./index.html", "./manifest.webmanifest", "./css/app.css",
   "./js/config.js", "./js/gmaps.js", "./js/util.js", "./js/store.js", "./js/geo.js",
   "./js/weather.js", "./js/maps.js", "./js/money.js", "./js/render.js", "./js/editor.js",
-  "./js/share.js", "./js/sample.js", "./js/insta.js", "./js/app.js",
+  "./js/share.js", "./js/sample.js", "./js/insta.js", "./js/tools.js", "./js/app.js",
   "./assets/icon-192.png", "./assets/icon-512.png", "./assets/icon-maskable-512.png",
   "./assets/apple-touch-icon.png"
 ];

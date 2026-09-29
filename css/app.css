@@ -1087,3 +1087,24 @@ body { background: var(--bg); }
 .tl-stay__name { min-width: 0; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tl-stay__fare { flex: 0 0 auto; font-size: 12.5px; color: var(--text-3); }
 .tl-stay__go { flex: 0 0 auto; padding: 4px 2px; min-height: 0; }
+
+/* 쓴 돈 · 정산 */
+.input--big { font-size: 26px; font-weight: 800; padding: 16px; letter-spacing: -.02em; }
+.money-date { display: flex; justify-content: space-between; margin: 16px 6px 8px; font-size: 13px; font-weight: 700; color: var(--text-3); }
+.list-row__tail--ink { color: var(--text); }
+.budget__fill--over { background: var(--c-red); }
+.member-chips { margin: 0 2px 4px; }
+div.list-row { cursor: default; }
+
+/* 준비물 */
+.pack-row { display: flex; align-items: center; }
+.pack-row__check { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 12px; padding: 14px 8px 14px 20px; background: none; border: none; text-align: left; color: var(--text); font-size: 16px; }
+.pack-row__box { flex: 0 0 24px; height: 24px; border-radius: 8px; border: 2px solid #d1d6db; display: grid; place-items: center; color: #fff; font-size: 14px; font-weight: 900; }
+.pack-row.is-done .pack-row__box { background: var(--brand); border-color: var(--brand); }
+.pack-row.is-done .pack-row__text { color: var(--text-3); text-decoration: line-through; }
+.pack-row__text { min-width: 0; overflow-wrap: anywhere; }
+.pack-row__del { flex: 0 0 44px; height: 44px; margin-right: 8px; border: none; background: none; color: #b0b8c1; font-size: 14px; border-radius: 10px; }
+.pack-row__del:active { background: var(--c-red-bg); }
+.pack-add { display: flex; gap: 8px; margin-top: 12px; }
+.pack-add .input { flex: 1 1 auto; min-width: 0; }
+.pack-add .btn { flex: 0 0 auto; padding-left: 18px; padding-right: 18px; }

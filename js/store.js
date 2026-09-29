@@ -1,7 +1,9 @@
 /* store.js — 다중 여행 데이터 모델 + localStorage (네임스페이스 TP.store)
  *
  *   State { trips: [Trip], activeId }
- *   Trip  { id, title, region, currency, homeCurrency, days: [Day], wish: [Stop] }   // wish = 날짜 안 정한 장소(보관함)
+ *   Trip  { id, title, region, currency, homeCurrency, days: [Day], wish: [Stop],   // wish = 날짜 안 정한 장소(보관함)
+ *           members: [이름], expenses: [Expense], packing: [{ id, text, done }] }       // 쓴 돈·정산 / 준비물
+ *   Expense { id, date, title, amount(여행 통화), payer(이름|""), split: [이름](비면 전원) }
  *   Day   { id, date:'YYYY-MM-DD', label, stops: [Stop] }
  *   Stop  { id, type, title, subtitle, address, lat, lon, time, durationLabel,
  *           arriveTime, departTime, stayMin,            // 공항 도착/출발 시각 + 체류시간(분)
@@ -46,7 +48,7 @@
   }
   function isISODate(s) { return typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) && !!TP.util.parseDate(s); }
 
-  function emptyTrip(partial) { return Object.assign({ id: uid(), title: "새 여행", region: "", currency: "JPY", homeCurrency: "", days: [], wish: [] }, partial || {}); }
+  function emptyTrip(partial) { return Object.assign({ id: uid(), title: "새 여행", region: "", currency: "JPY", homeCurrency: "", days: [], wish: [], members: [], expenses: [], packing: [] }, partial || {}); }
   function defaultDay(partial) { return Object.assign({ id: uid(), date: "", label: "", stops: [] }, partial || {}); }
   function defaultStop(partial) {
     var s = Object.assign({
@@ -103,7 +105,7 @@
   /* 외부에서 들어온 데이터(공유 링크·JSON 가져오기)의 규모 상한.
    * 상한이 없으면 조작된 링크 하나로 날짜 수천 개를 밀어 넣어 날씨 조회 폭주·localStorage 오염을
    * 유발할 수 있다(자기증폭형 DoS). 실제 여행 일정으로는 닿을 수 없는 넉넉한 값으로 자른다. */
-  var MAX_DAYS = 90, MAX_STOPS = 100, MAX_WISH = 200;
+  var MAX_DAYS = 90, MAX_STOPS = 100, MAX_WISH = 200, MAX_MEMBERS = 12, MAX_EXPENSES = 500, MAX_PACK = 100;
 
   function migrateTrip(trip) {
     if (!trip || typeof trip !== "object") return emptyTrip();
@@ -125,7 +127,30 @@
     });
     // 보관함 — 날짜를 아직 안 정한 장소. 구버전 데이터엔 없다.
     trip.wish = (Array.isArray(trip.wish) ? trip.wish : []).slice(0, MAX_WISH).map(function (s) { return defaultStop(s); });
+    // 일행 — 중복·빈 이름 제거
+    var seenM = {};
+    trip.members = (Array.isArray(trip.members) ? trip.members : []).map(function (m) { return clampText(m, 20).trim(); })
+      .filter(function (m) { if (!m || seenM[m]) return false; seenM[m] = 1; return true; }).slice(0, MAX_MEMBERS);
+    trip.expenses = (Array.isArray(trip.expenses) ? trip.expenses : []).slice(0, MAX_EXPENSES).map(normExpense).filter(Boolean);
+    trip.packing = (Array.isArray(trip.packing) ? trip.packing : []).slice(0, MAX_PACK).map(function (p) {
+      if (!p) return null;
+      var text = clampText(p.text, 80).trim();
+      return text ? { id: p.id || uid(), text: text, done: !!p.done } : null;
+    }).filter(Boolean);
     return trip;
+  }
+  function normExpense(e) {
+    if (!e || typeof e !== "object") return null;
+    var amt = parseFloat(e.amount);
+    if (!isFinite(amt) || amt <= 0) return null;
+    return {
+      id: e.id || uid(),
+      date: isISODate(e.date) ? e.date : "",
+      title: clampText(e.title, 60),
+      amount: amt,
+      payer: clampText(e.payer, 20),
+      split: (Array.isArray(e.split) ? e.split : []).map(function (m) { return clampText(m, 20); }).filter(Boolean).slice(0, MAX_MEMBERS)
+    };
   }
 
   /* ---- 영속화 ---- */
@@ -361,6 +386,52 @@
     t.wish.push(s); notify(); return true;
   }
 
+  /* ---- 쓴 돈(실제 지출) · 일행 — 활성 여행 ----
+   * 예산(예상)과 따로 적는다. 금액은 여행 통화 기준. 일행이 둘 이상이면 정산(누가 누구에게 얼마)을 낸다. */
+  function addMember(name) {
+    var t = _t(); if (!t) return false;
+    name = clampText(name, 20).trim();
+    if (!name || t.members.indexOf(name) >= 0 || t.members.length >= MAX_MEMBERS) return false;
+    t.members.push(name); notify(); return true;
+  }
+  function removeMember(name) {
+    var t = _t(); if (!t) return;
+    t.members = t.members.filter(function (m) { return m !== name; });
+    // 그 사람이 낸/나눈 기록은 지우지 않는다 — 정산에서 "누가 냈는지 모름"으로 빠진다
+    notify();
+  }
+  function addExpense(e) {
+    var t = _t(); if (!t || t.expenses.length >= MAX_EXPENSES) return null;
+    var x = normExpense(Object.assign({}, e, { id: uid() })); if (!x) return null;
+    t.expenses.push(x); notify(); return x;
+  }
+  function updateExpense(id, e) {
+    var t = _t(); if (!t) return;
+    for (var i = 0; i < t.expenses.length; i++) if (t.expenses[i].id === id) {
+      var x = normExpense(Object.assign({}, t.expenses[i], e, { id: id }));
+      if (x) { t.expenses[i] = x; notify(); }
+      return;
+    }
+  }
+  function removeExpense(id) { var t = _t(); if (!t) return; t.expenses = t.expenses.filter(function (x) { return x.id !== id; }); notify(); }
+
+  /* ---- 준비물 체크리스트 — 활성 여행 ---- */
+  var DEFAULT_PACK = ["여권 (유효기간 6개월 이상)", "항공권·숙소 예약 확인", "환전·해외결제 카드", "eSIM·로밍·유심", "충전기·보조배터리·멀티어댑터", "여행자 보험", "상비약"];
+  function ensurePacking() {
+    var t = _t(); if (!t) return;
+    if (t.packing.length || t.packingInit) return;
+    t.packing = DEFAULT_PACK.map(function (text) { return { id: uid(), text: text, done: false }; });
+    t.packingInit = true; save();            // 화면을 그리는 중에 부르므로 다시 그리지 않는다(notify 금지)
+  }
+  function addPack(text) {
+    var t = _t(); if (!t) return;
+    text = clampText(text, 80).trim();
+    if (!text || t.packing.length >= MAX_PACK) return;
+    t.packing.push({ id: uid(), text: text, done: false }); notify();
+  }
+  function togglePack(id) { var t = _t(); if (!t) return; t.packing.forEach(function (p) { if (p.id === id) p.done = !p.done; }); notify(); }
+  function removePack(id) { var t = _t(); if (!t) return; t.packing = t.packing.filter(function (p) { return p.id !== id; }); t.packingInit = true; notify(); }
+
   /* ---- 가져오기/내보내기 (활성 여행) ---- */
   function exportJSON() {
     var t = _t(); if (!t) return JSON.stringify(emptyTrip(), null, 2);
@@ -381,6 +452,8 @@
     reorderStops: reorderStops, moveStop: moveStop, moveStopToDay: moveStopToDay,
     wishList: wishList, wishStop: wishStop, addWish: addWish, updateWish: updateWish, removeWish: removeWish,
     moveWishToDay: moveWishToDay, moveStopToWish: moveStopToWish,
+    addMember: addMember, removeMember: removeMember, addExpense: addExpense, updateExpense: updateExpense, removeExpense: removeExpense,
+    ensurePacking: ensurePacking, addPack: addPack, togglePack: togglePack, removePack: removePack,
     exportJSON: exportJSON, importJSON: importJSON,
     defaultStop: defaultStop, defaultDay: defaultDay
   };

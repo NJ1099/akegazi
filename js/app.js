@@ -56,13 +56,15 @@
     var h = (location.hash || "").replace(/^#/, "");
     var m = /^\/trip\/([^/]+)\/day\/(.+)$/.exec(h);
     if (m) return { name: "day", tripId: m[1], dayId: m[2] };
+    m = /^\/trip\/([^/]+)\/(money|pack)$/.exec(h);
+    if (m) return { name: m[2], tripId: m[1] };
     m = /^\/trip\/([^/]+)$/.exec(h);
     if (m) return { name: "trip", tripId: m[1] };
     return { name: "home" };
   }
   function goBack() {
     var r = parseHash();
-    if (r.name === "day") location.hash = "#/trip/" + r.tripId;
+    if (r.name === "day" || r.name === "money" || r.name === "pack") location.hash = "#/trip/" + r.tripId;
     else location.hash = "#/";
   }
 
@@ -82,6 +84,12 @@
       var d = store.day(route.dayId);
       if (!d) { location.hash = "#/trip/" + route.tripId; return; }
       renderDay(d);
+    } else if (route.name === "money" || route.name === "pack") {
+      store.setActive(route.tripId);
+      var tt = store.trip(route.tripId);
+      if (!tt) { location.hash = "#/"; return; }
+      if (route.name === "money") { ensureFx(tt); TP.tools.renderMoney(viewEl, tt); }
+      else TP.tools.renderPack(viewEl, tt);
     } else if (route.name === "trip") {
       store.setActive(route.tripId);
       var t = store.trip(route.tripId);
@@ -255,8 +263,9 @@
     var tToday = findToday(trip);
     if (tToday) viewEl.appendChild(todayCard(tToday));
     ensureFx(trip);
-    var tripBud =R.budgetBanner(R.tripBudget(trip), trip.currency || "JPY", "여행 총 예산", trip.homeCurrency || "");
+    var tripBud = R.budgetBanner(R.tripBudget(trip), trip.currency || "JPY", "여행 총 예산", trip.homeCurrency || "");
     if (tripBud) viewEl.appendChild(tripBud);
+    viewEl.appendChild(TP.tools.tripRows(trip));
 
     if (!trip.days.length) {
       viewEl.appendChild(el("div.empty", null, [

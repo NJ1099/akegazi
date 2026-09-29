@@ -75,6 +75,7 @@
         return o;
       })
     };
+    if (trip.wish && trip.wish.length) compact.w = trip.wish.map(compactStop);   // 보관함(날짜 미정 장소)
     if (trip.region) compact.rg = trip.region;
     if (trip.currency && trip.currency !== "JPY") compact.cu = trip.currency;
     if (trip.homeCurrency) compact.hc = trip.homeCurrency;
@@ -98,6 +99,7 @@
         currency: c.cu || "JPY",
         homeCurrency: c.hc || "",
         customCats: (Array.isArray(c.xc) ? c.xc : []).map(function (a) { return { k: a && a[0], l: a && a[1] }; }),
+        wish: (Array.isArray(c.w) ? c.w : []).map(expandStop),
         days: c.d.map(function (day) {
           return { date: day.dt || "", label: day.l || "", stops: (day.s || []).map(expandStop) };
         })

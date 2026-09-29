@@ -122,6 +122,8 @@
     var S = TP.store, act = S.activeId(), out = [];
     var trips = S.trips().slice().sort(function (a, b) { return (b.id === act) - (a.id === act); });
     trips.forEach(function (t) {
+      // 보관함을 맨 앞에 — 인스타에서 찾은 곳은 대개 "언젠가 가 볼 곳"이라 날짜부터 정하기 어렵다
+      out.push({ tripId: t.id, wish: true, label: (t.title || "여행") + " · 📌 보관함(날짜 미정)" });
       (t.days || []).forEach(function (d, i) {
         out.push({ tripId: t.id, dayId: d.id, label: (t.title || "여행") + " · Day " + (i + 1) + (d.date ? " " + U.fmtDate(d.date) : "") });
       });
@@ -144,7 +146,9 @@
     var S = TP.store;
     S.setActive(target.tripId);
     var title = p.name_ko || p.name;
-    var s = S.addStop(target.dayId, {
+    var put = target.wish ? function (partial) { return S.addWish(partial); } : function (partial) { return S.addStop(target.dayId, partial); };
+    var patch = target.wish ? function (id, v) { S.updateWish(id, v); } : function (id, v) { S.updateStop(target.dayId, id, v); };
+    var s = put({
       type: stopType(p.category), title: title,
       subtitle: (p.name_ko && p.name && p.name !== p.name_ko) ? p.name : "",
       address: p.address || "",
@@ -174,7 +178,7 @@
         var r = list && list[0];
         if (!r) return false;
         S.setActive(target.tripId);                      // 사이에 다른 여행을 열었어도 제자리에 쓴다
-        S.updateStop(target.dayId, s.id, { lat: r.lat, lon: r.lon, address: p.address || r.address || "", openHours: s.openHours || r.hours || "" });
+        patch(s.id, { lat: r.lat, lon: r.lon, address: p.address || r.address || "", openHours: s.openHours || r.hours || "" });
         return true;
       }, function () { return false; });
     });
@@ -238,7 +242,7 @@
     ctx = ctx && ctx();
     if (ctx) {
       target.appendChild(el("div.ig-addbar", null, [
-        el("span.ig-addbar__label", { text: "담을 날짜" }), ctx.sel,
+        el("span.ig-addbar__label", { text: "담을 곳" }), ctx.sel,
         el("button.btn.btn--block", { onclick: function () {
           var left = ctx.buttons.filter(function (b) { return !b.btn.disabled; });
           if (!left.length) { U.toast("이미 모두 담았어요"); return; }
@@ -268,8 +272,8 @@
           goBar.innerHTML = "";
           goBar.appendChild(el("button.btn.btn--block", { onclick: function () {
             close();
-            location.hash = "#/trip/" + tg.tripId + "/day/" + tg.dayId;
-          } }, ["📅 담은 날짜 일정 보기"]));
+            location.hash = "#/trip/" + tg.tripId + (tg.wish ? "" : "/day/" + tg.dayId);
+          } }, [tg.wish ? "📌 보관함 보기" : "📅 담은 날짜 일정 보기"]));
         });
       }
 

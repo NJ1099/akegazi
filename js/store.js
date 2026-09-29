@@ -1,7 +1,7 @@
 /* store.js — 다중 여행 데이터 모델 + localStorage (네임스페이스 TP.store)
  *
  *   State { trips: [Trip], activeId }
- *   Trip  { id, title, region, currency, homeCurrency, days: [Day] }
+ *   Trip  { id, title, region, currency, homeCurrency, days: [Day], wish: [Stop] }   // wish = 날짜 안 정한 장소(보관함)
  *   Day   { id, date:'YYYY-MM-DD', label, stops: [Stop] }
  *   Stop  { id, type, title, subtitle, address, lat, lon, time, durationLabel,
  *           arriveTime, departTime, stayMin,            // 공항 도착/출발 시각 + 체류시간(분)
@@ -45,7 +45,7 @@
   }
   function isISODate(s) { return typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) && !!TP.util.parseDate(s); }
 
-  function emptyTrip(partial) { return Object.assign({ id: uid(), title: "새 여행", region: "", currency: "JPY", homeCurrency: "", days: [] }, partial || {}); }
+  function emptyTrip(partial) { return Object.assign({ id: uid(), title: "새 여행", region: "", currency: "JPY", homeCurrency: "", days: [], wish: [] }, partial || {}); }
   function defaultDay(partial) { return Object.assign({ id: uid(), date: "", label: "", stops: [] }, partial || {}); }
   function defaultStop(partial) {
     var s = Object.assign({
@@ -97,7 +97,7 @@
   /* 외부에서 들어온 데이터(공유 링크·JSON 가져오기)의 규모 상한.
    * 상한이 없으면 조작된 링크 하나로 날짜 수천 개를 밀어 넣어 날씨 조회 폭주·localStorage 오염을
    * 유발할 수 있다(자기증폭형 DoS). 실제 여행 일정으로는 닿을 수 없는 넉넉한 값으로 자른다. */
-  var MAX_DAYS = 90, MAX_STOPS = 100;
+  var MAX_DAYS = 90, MAX_STOPS = 100, MAX_WISH = 200;
 
   function migrateTrip(trip) {
     if (!trip || typeof trip !== "object") return emptyTrip();
@@ -117,6 +117,8 @@
       if (d.stops.length > MAX_STOPS) d.stops = d.stops.slice(0, MAX_STOPS);
       d.stops = d.stops.map(function (s) { return defaultStop(s); });
     });
+    // 보관함 — 날짜를 아직 안 정한 장소. 구버전 데이터엔 없다.
+    trip.wish = (Array.isArray(trip.wish) ? trip.wish : []).slice(0, MAX_WISH).map(function (s) { return defaultStop(s); });
     return trip;
   }
 
@@ -203,6 +205,7 @@
     if (!trip) return [];
     var used = {};
     (trip.days || []).forEach(function (d) { (d.stops || []).forEach(function (s) { if (s.costCategory && !BUILTIN_CAT_KEYS[s.costCategory]) used[s.costCategory] = 1; }); });
+    (trip.wish || []).forEach(function (s) { if (s.costCategory && !BUILTIN_CAT_KEYS[s.costCategory]) used[s.costCategory] = 1; });
     return STATE.customCats.filter(function (c) { return used[c.k]; });
   }
 
@@ -291,6 +294,37 @@
     return true;
   }
 
+  /* ---- 보관함(날짜 미정 장소) — 활성 여행 ----
+   * 인스타에서 찾았거나 "언젠가 가 볼 곳"을 일단 모아 두고, 날짜가 정해지면 그 날로 보낸다.
+   * 객체를 그대로 옮기므로 입력한 내용(좌표·영업시간·메모)이 하나도 사라지지 않는다. */
+  function wishList() { var t = _t(); return t ? t.wish : []; }
+  function wishStop(id) { return wishList().filter(function (s) { return s.id === id; })[0] || null; }
+  function addWish(partial) {
+    var t = _t(); if (!t) return null;
+    if (t.wish.length >= MAX_WISH) return null;
+    var s = defaultStop(partial); t.wish.push(s); notify(); return s;
+  }
+  function updateWish(id, patch) { var s = wishStop(id); if (!s) return; Object.assign(s, patch); notify(); }
+  function removeWish(id) { var t = _t(); if (!t) return; t.wish = t.wish.filter(function (s) { return s.id !== id; }); notify(); }
+  function moveWishToDay(id, dayId) {
+    var t = _t(), d = day(dayId); if (!t || !d) return false;
+    var idx = -1;
+    for (var i = 0; i < t.wish.length; i++) if (t.wish[i].id === id) { idx = i; break; }
+    if (idx < 0) return false;
+    var s = t.wish.splice(idx, 1)[0];
+    s.fareAmount = null; s.fareFrom = ""; s.arriveBy = "";    // 구간 요금은 새 자리에서 다시 정한다
+    d.stops.push(s); notify(); return true;
+  }
+  function moveStopToWish(dayId, stopId) {
+    var t = _t(), d = day(dayId); if (!t || !d) return false;
+    var idx = -1;
+    for (var i = 0; i < d.stops.length; i++) if (d.stops[i].id === stopId) { idx = i; break; }
+    if (idx < 0) return false;
+    var s = d.stops.splice(idx, 1)[0];
+    s.fareAmount = null; s.fareFrom = ""; s.arriveBy = "";
+    t.wish.push(s); notify(); return true;
+  }
+
   /* ---- 가져오기/내보내기 (활성 여행) ---- */
   function exportJSON() {
     var t = _t(); if (!t) return JSON.stringify(emptyTrip(), null, 2);
@@ -309,6 +343,8 @@
     addDay: addDay, ensureDays: ensureDays, stayOn: stayOn, routeOf: routeOf, updateDay: updateDay, removeDay: removeDay,
     addStop: addStop, updateStop: updateStop, removeStop: removeStop,
     reorderStops: reorderStops, moveStop: moveStop, moveStopToDay: moveStopToDay,
+    wishList: wishList, wishStop: wishStop, addWish: addWish, updateWish: updateWish, removeWish: removeWish,
+    moveWishToDay: moveWishToDay, moveStopToWish: moveStopToWish,
     exportJSON: exportJSON, importJSON: importJSON,
     defaultStop: defaultStop, defaultDay: defaultDay
   };

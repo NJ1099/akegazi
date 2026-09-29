@@ -309,6 +309,27 @@
       })(d, i + 1);
       viewEl.appendChild(card);
     });
+
+    // 보관함 — 날짜를 아직 안 정한 장소. 누르면 편집창의 「언제 갈까요?」에서 날짜로 보낸다.
+    var wish = trip.wish || [];
+    viewEl.appendChild(el("div.section-title", null, [
+      el("span", { text: "보관함" + (wish.length ? " " + wish.length : "") }),
+      el("button.link-btn", { onclick: function () { TP.editor.openStopModal(null, null, { wish: true }); } }, ["+ 담기"])
+    ]));
+    if (wish.length) {
+      viewEl.appendChild(el("div.list-card", null, wish.map(function (s) {
+        return el("button.list-row", { onclick: function () { TP.editor.openStopModal(null, s.id, { wish: true }); } }, [
+          el("span.list-row__icon", { text: R.typeIcon(s) }),
+          el("span.list-row__main", null, [
+            el("span.list-row__title", { text: s.title || "(이름 없음)" }),
+            el("span.list-row__sub", { text: s.address ? s.address : "위치 미정" })
+          ]),
+          el("span.list-row__tail.list-row__tail--soft", { text: "날짜 정하기 ›" })
+        ]);
+      })));
+    } else {
+      viewEl.appendChild(el("button.list-card.list-card--empty", { onclick: function () { TP.editor.openStopModal(null, null, { wish: true }); } }, ["📌  언제 갈지 모르는 곳은 여기 모아 두세요"]));
+    }
   }
 
   /* 여행의 숙소들(기간이 있는 것만) — 체크인 순 */

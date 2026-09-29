@@ -64,9 +64,12 @@
   /* ---------- 장소 모달 ---------- */
   /* opts.type: 새 장소의 기본 종류(여행 화면의 '숙소 추가'는 dayId 없이 lodging 으로 연다 —
    * 숙박 기간을 고르면 그 날짜들이 Day 로 만들어지고 체크인 날에 숙소가 들어간다). */
+  /* opts.wish: 보관함(날짜 미정) 장소로 연다 — dayId 없이. 저장할 때 「언제 갈까요?」에서 날짜를 고르면 그 날로 옮겨진다. */
   function openStopModal(dayId, stopId, opts) {
     opts = opts || {};
-    var existing = (stopId && dayId) ? store.stop(dayId, stopId) : null;
+    var wishMode = !!opts.wish;
+    if (wishMode) dayId = null;
+    var existing = wishMode ? (stopId ? store.wishStop(stopId) : null) : ((stopId && dayId) ? store.stop(dayId, stopId) : null);
     var f = Object.assign(store.defaultStop(), existing ? JSON.parse(JSON.stringify(existing)) : (opts.type ? { type: opts.type } : {}));
     var pickMap = null;
     var trip = store.activeTrip();
@@ -80,7 +83,7 @@
     }
 
     modal(function (box, close) {
-      box.appendChild(el("div.modal__title", { text: existing ? "장소 편집" : (f.type === "lodging" && !dayId ? "숙소 추가" : "장소 추가") }));
+      box.appendChild(el("div.modal__title", { text: wishMode ? (existing ? "보관함 장소" : "보관함에 담기") : existing ? "장소 편집" : (f.type === "lodging" && !dayId ? "숙소 추가" : "장소 추가") }));
 
       // 이름 (입력하면 위치 자동 검색)
       var results = el("div.geo-results");
@@ -142,16 +145,25 @@
       var timeField = null, costLabel = null;
       var adv = el("div.more__body");     // '더 입력하기' 안쪽 — 자주 안 쓰는 항목은 여기로 접는다
       var moveSel = null, moveField = null;
-      if (existing && trip && trip.days.length > 1) {
-        moveSel = el("select.select", { "aria-label": "이 장소를 옮길 날짜" });
+      var WISH = "__wish";
+      if (trip && (wishMode || existing)) {
+        moveSel = el("select.select", { "aria-label": wishMode ? "언제 갈지" : "이 장소를 옮길 날짜" });
+        if (wishMode) moveSel.appendChild(el("option", { value: WISH, text: "📌 아직 몰라요 · 보관함에 두기" }));
         trip.days.forEach(function (d, i) {
           var label = "Day " + (i + 1) + (d.date ? " · " + U.fmtDate(d.date) : "") + (d.label ? " · " + d.label : "");
           var opt = el("option", { value: d.id, text: label });
           if (d.id === dayId) opt.selected = true;
           moveSel.appendChild(opt);
         });
-        moveField = field("날짜 옮기기", moveSel, "다른 날로 옮기면 입력한 내용 그대로 그 날 맨 뒤에 붙어요");
-        adv.appendChild(moveField);
+        if (!wishMode) moveSel.appendChild(el("option", { value: WISH, text: "📌 보관함으로 (날짜 미정)" }));
+        if (wishMode) {
+          moveSel.value = WISH;
+          moveField = field("언제 갈까요?", moveSel);           // 보관함에선 이게 핵심이라 이름 바로 아래에 보인다
+          box.appendChild(moveField);
+        } else {
+          moveField = field("날짜 옮기기", moveSel, "다른 날로 옮기면 입력한 내용 그대로 그 날 맨 뒤에 붙어요");
+          adv.appendChild(moveField);
+        }
       }
 
       // ----- 공항 시각 (공항 타입에서만 표시) -----
@@ -433,21 +445,40 @@
             // 편집창에서 금액을 확인하고 저장했다면, 그 값을 "지금 구간"의 요금으로 인정한다.
             if (prevStop && typeof f.fareAmount === "number") f.fareFrom = prevStop.id;
             var moved = "", target = dayId;
+            var dest = moveSel ? moveSel.value : dayId;          // 날짜 id 또는 WISH(보관함)
             if (f.type === "lodging") {
               // 숙박 기간의 날짜들을 보장하고(없는 날만 생성 — 줄여도 기존 날짜는 지우지 않는다), 숙소는 체크인 날에 둔다
               if (!f.checkIn) { U.toast("체크인 날짜를 고르세요"); ciInput.focus(); return; }
               f.checkOut = U.addDaysISO(f.checkIn, nights);
               var dmap = store.ensureDays(U.dateList(f.checkIn, f.checkOut));
               target = dmap[f.checkIn] || dayId;
+              dest = target;                                     // 숙소는 체크인 날이 곧 자리다
               moved = nights + "박 " + (nights + 1) + "일 숙소를 넣었어요";
             } else { f.checkIn = ""; f.checkOut = ""; }
+            if (wishMode) {
+              // 보관함 장소: 날짜를 골랐으면 그 날 맨 뒤로, 아니면 보관함에 그대로
+              if (existing) {
+                store.updateWish(stopId, f);
+                if (dest && dest !== WISH && store.moveWishToDay(stopId, dest)) moved = moved || ("Day " + (store.dayIndex(dest) + 1) + "(으)로 보냈어요");
+              } else if (dest && dest !== WISH) {
+                store.addStop(dest, f); moved = moved || ("Day " + (store.dayIndex(dest) + 1) + "에 넣었어요");
+              } else if (!store.addWish(f)) { U.toast("보관함이 가득 찼어요"); return; }
+              close();
+              U.toast(moved || (existing ? "수정했어요" : "보관함에 담았어요"));
+              return;
+            }
             if (!target) { U.toast("날짜를 먼저 추가하세요"); return; }
+            if (existing && dest === WISH) {                       // 날짜에서 보관함으로 되돌리기
+              store.updateStop(dayId, stopId, f);
+              store.moveStopToWish(dayId, stopId);
+              close(); U.toast("보관함으로 옮겼어요"); return;
+            }
             if (existing) {
               store.updateStop(dayId, stopId, f);
               var toDay = (f.type === "lodging") ? target : (moveSel && moveSel.value);
               if (toDay && toDay !== dayId) {
                 var toIdx = store.dayIndex(toDay);
-                if (store.moveStopToDay(dayId, stopId, toDay) && f.type !== "lodging") moved = "Day " + (toIdx + 1) + "(으)로 옮겼어요";
+                if (toDay !== WISH && store.moveStopToDay(dayId, stopId, toDay) && f.type !== "lodging") moved = "Day " + (toIdx + 1) + "(으)로 옮겼어요";
               }
             } else store.addStop(target, f);
             close();
@@ -460,7 +491,11 @@
 
       if (existing) {
         box.appendChild(el("button.btn.btn--block.btn--danger.modal__delete", {
-          onclick: function () { if (!window.confirm("‘" + (f.title || "이 장소") + "’ 을(를) 삭제할까요?")) return; store.removeStop(dayId, stopId); close(); U.toast("삭제했어요"); }
+          onclick: function () {
+            if (!window.confirm("‘" + (f.title || "이 장소") + "’ 을(를) 삭제할까요?")) return;
+            if (wishMode) store.removeWish(stopId); else store.removeStop(dayId, stopId);
+            close(); U.toast("삭제했어요");
+          }
         }, ["이 장소 삭제"]));
       }
     }, function () {

@@ -1069,3 +1069,5 @@ body { background: var(--bg); }
 .dday { flex: 0 0 auto; align-self: center; font-size: 13px; font-weight: 800; color: var(--brand); background: var(--brand-soft); border-radius: 999px; padding: 4px 10px; margin-right: 6px; }
 .dday--now { color: #fff; background: var(--brand); }
 .today__head .link-btn { flex: 0 0 auto; white-space: nowrap; }
+.list-row__sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.list-row__tail--soft { color: var(--text-3); font-weight: 600; font-size: 14px; }

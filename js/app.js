@@ -382,7 +382,7 @@
   /* ---------- 날짜: 장소 타임라인 ---------- */
   function renderDay(day) {
     var idx = store.dayIndex(day.id);
-    ensureRoads(day);   // 구글 실거리 비동기 로드(교통비 정확도)
+    ensureRoads(store.routeOf(store.activeTrip(), day));   // 구글 실거리 비동기 로드(교통비 정확도)
     viewEl.appendChild(el("div.day-hero", null, [
       el("div.day-hero__main", null, [
         el("div.day-hero__eyebrow", { text: "DAY " + (idx + 1) }),
@@ -392,22 +392,15 @@
       el("button.day-hero__edit", { title: "날짜·코스 편집", onclick: function () { TP.editor.openDayModal(day.id); } }, ["✎ 편집"])
     ]));
 
-    var stayNow = store.stayOn(store.activeTrip(), day.date);
-    if (stayNow) {
-      var sst = stayNow.stop;
-      viewEl.appendChild(el("div.stay-pill", null, [
-        el("span", { html: stayNow.checkout ? "🧳" : "🏨" }),
-        el("span", { text: stayNow.checkout ? "오늘 체크아웃 · " + (sst.title || "숙소") : "오늘 밤 · " + (sst.title || "숙소") }),
-        el("span.stay-pill__tail", { text: stayNow.checkout ? "" : stayNow.night + "/" + stayNow.nights + "박" })
-      ]));
-    }
+    // 숙소 출발·귀가는 타임라인 맨 위·맨 아래 줄로 보인다(예전 「오늘 밤 · 숙소」 알약을 대신한다)
+    var route = store.routeOf(store.activeTrip(), day);
 
     var wxSlot = el("div"); wxSlot.appendChild(R.weatherBanner(null));
     var rainSlot = el("div");
     viewEl.appendChild(wxSlot); viewEl.appendChild(rainSlot);
 
     // 시간 일정(공항 도착/출발 기준 ETA·비행기 마감) 배너
-    var schedule = geo.buildSchedule(day.stops);
+    var schedule = geo.buildSchedule(route);
     var schedSlot = el("div");
     var sb = R.scheduleBanner(schedule);
     if (sb) schedSlot.appendChild(sb);
@@ -423,8 +416,8 @@
     viewEl.appendChild(bodySlot);
 
     var myEpoch = epoch;
-    if (mode === "map") renderDayMap(day, idx, bodySlot);
-    else drawTimeline(day, idx, bodySlot, false, schedule);
+    if (mode === "map") renderDayMap(day, idx, bodySlot, route);
+    else drawTimeline(day, idx, bodySlot, false, schedule, route);
 
     W.getDayWeather(day).then(function (wx) {
       if (myEpoch !== epoch || !wxSlot.isConnected) return;
@@ -438,12 +431,12 @@
     var dtrip = store.activeTrip();
     var dcur = (dtrip && dtrip.currency) || "JPY", dhome = (dtrip && dtrip.homeCurrency) || "";
     ensureFx(dtrip);
-    var dayBud = R.budgetBanner(R.dayBudget(day, dcur), dcur, "이 날 예산", dhome);
+    var dayBud = R.budgetBanner(R.dayBudget(day, dcur, route), dcur, "이 날 예산", dhome);
     if (dayBud) viewEl.appendChild(dayBud);
 
     viewEl.appendChild(el("div", { style: { marginTop: "16px", display: "flex", gap: "10px" } }, [
-      el("button.btn.btn--ghost.btn--sm", { style: { flex: "1" }, onclick: function () { optimize(day); } }, ["🧭 동선 최적화"]),
-      el("button.btn.btn--ghost.btn--sm", { style: { flex: "1" }, onclick: function () { allDirections(day); } }, ["🗺 전체 길찾기"])
+      el("button.btn.btn--ghost.btn--sm", { style: { flex: "1" }, onclick: function () { optimize(day, route); } }, ["🧭 동선 최적화"]),
+      el("button.btn.btn--ghost.btn--sm", { style: { flex: "1" }, onclick: function () { allDirections(route); } }, ["🗺 전체 길찾기"])
     ]));
     // 토스식 하단 고정 버튼 — 이 화면에서 가장 자주 하는 일
     viewEl.appendChild(el("div.cta-bar", null, [
@@ -451,18 +444,19 @@
     ]));
   }
 
-  function drawTimeline(day, idx, target, rainy, schedule) {
+  function drawTimeline(day, idx, target, rainy, schedule, route) {
     target.innerHTML = "";
     var _t = store.activeTrip();
-    var ctx = { dayIndex: idx, rainy: !!rainy, schedule: schedule, currency: (_t && _t.currency) || "JPY", homeCurrency: (_t && _t.homeCurrency) || "", onEdit: function (sid) { TP.editor.openStopModal(day.id, sid); } };
+    var ctx = { dayIndex: idx, rainy: !!rainy, schedule: schedule, route: route, currency: (_t && _t.currency) || "JPY", homeCurrency: (_t && _t.homeCurrency) || "", onEdit: function (sid) { TP.editor.openStopModal(day.id, sid); } };
     var tl = R.timeline(day, ctx);
     target.appendChild(tl);
     if (day.stops.length > 1) attachDragReorder(tl, day.id);
   }
 
-  function renderDayMap(day, idx, target) {
+  function renderDayMap(day, idx, target, route) {
     target.innerHTML = "";
-    var geoStops = day.stops.filter(geo.hasCoord);
+    route = route || day.stops;
+    var geoStops = route.filter(geo.hasCoord);
     if (!geoStops.length) {
       target.appendChild(el("div.empty", null, [
         el("div.empty__emoji", { html: "🗺️" }),
@@ -489,7 +483,7 @@
     var myEpoch = epoch;
     setTimeout(function () {
       if (myEpoch !== epoch || !mapDiv.isConnected) return;
-      var map = TP.maps.renderRoute(mapDiv, day.stops, { color: color });
+      var map = TP.maps.renderRoute(mapDiv, route, { color: color });
       if (myEpoch !== epoch) { TP.maps.destroy(map); return; }
       liveMap = map;
     }, 0);
@@ -571,14 +565,15 @@
     });
   }
   /* ---------- 액션 ---------- */
-  function optimize(day) {
-    var res = geo.optimizeOrder(day.stops);
+  // 숙소 출발·귀가(가상 칸)는 앵커라 제자리에 고정된 채로 그 사이만 최적화된다 — 저장할 땐 가상 칸을 뺀다
+  function optimize(day, route) {
+    var res = geo.optimizeOrder(route || day.stops);
     if (!res.improved) { U.toast(res.reason === "too-few-coords" ? "동선 최적화는 좌표 있는 장소 3곳 이상에서 동작해요" : "이미 효율적인 동선이에요"); return; }
-    store.reorderStops(day.id, res.order);
+    store.reorderStops(day.id, res.order.filter(function (id) { return !/^vs:/.test(id); }));
     U.toast("동선 최적화: " + geo.fmtDist(res.before) + " → " + geo.fmtDist(res.after));
   }
-  function allDirections(day) {
-    var r = geo.multiDirURL(day.stops, "transit");
+  function allDirections(route) {
+    var r = geo.multiDirURL(route, "transit");
     if (!r || !r.url) { U.toast("좌표가 있는 장소가 2곳 이상 필요해요"); return; }
     if (r.dropped > 0) U.toast("경유지가 많아 앞 " + (r.total - r.dropped) + "곳만 길찾기에 포함돼요 (" + r.dropped + "곳 생략)");
     window.open(r.url, "_blank", "noopener");
@@ -648,9 +643,9 @@
   }
 
   /* ---------- 구글 실거리 로드(교통비 정확도 → 재렌더로 반영) ---------- */
-  function ensureRoads(day) {
-    if (!day || !TP.gmaps || !TP.gmaps.hasKey()) return;
-    var stops = day.stops, myEpoch = epoch, pending = [];
+  function ensureRoads(stops) {
+    if (!stops || !TP.gmaps || !TP.gmaps.hasKey()) return;
+    var myEpoch = epoch, pending = [];
     for (var i = 1; i < stops.length; i++) {
       var s = stops[i], prev = stops[i - 1];
       if (s.arriveBy === "walk" || s.arriveBy === "none") continue;

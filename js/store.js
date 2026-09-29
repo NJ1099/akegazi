@@ -258,8 +258,38 @@
     });
     return out;
   }
-  /* 그날의 실제 동선 — 장소 목록(숙소 출발·귀가는 ③에서 덧붙인다) */
-  function routeOf(trip, day) { return (day && day.stops) || []; }
+  /* 그날의 실제 동선 — [어젯밤 숙소(출발)] + 장소들 + [오늘 밤 숙소(귀가)].
+   * 숙소는 체크인 날의 장소 목록에 한 번만 들어 있어서, 둘째 날부터는 "호텔에서 나와 호텔로 돌아간다"가
+   * 동선 최적화·예상 시각·교통비 어디에도 없었다. 날짜마다 숙박 기간으로 계산해 앞뒤에 가상 칸을 붙인다.
+   *   출발 = 어젯밤 묵은 곳 (checkIn < 날짜 ≤ checkOut)
+   *   귀가 = 오늘 밤 묵을 곳 (checkIn ≤ 날짜 < checkOut)
+   * 중간에 숙소를 바꾸는 날은 둘이 달라진다(A 에서 나와 B 로). 겹치는 예약이 있으면 체크인이 늦은 쪽.
+   * 가상 칸은 저장되지 않는다(id "vs:…", virtual: "start"|"end"). 경비는 비워 숙박비가 두 번 잡히지 않게 한다. */
+  function routeOf(trip, day) {
+    var stops = (day && day.stops) || [];
+    var date = day && day.date;
+    if (!trip || !date) return stops;
+    var morning = null, tonight = null;
+    (trip.days || []).forEach(function (d) {
+      (d.stops || []).forEach(function (s) {
+        if (s.type !== "lodging" || !s.checkIn || !s.checkOut) return;
+        if (s.checkIn < date && date <= s.checkOut && (!morning || s.checkIn > morning.checkIn)) morning = s;
+        if (s.checkIn <= date && date < s.checkOut && (!tonight || s.checkIn > tonight.checkIn)) tonight = s;
+      });
+    });
+    if (!morning && !tonight) return stops;
+    var out = stops.slice();
+    if (morning && !(out[0] && out[0].id === morning.id)) out.unshift(virtualStay(morning, "start"));
+    if (tonight && !(out.length && out[out.length - 1].id === tonight.id)) out.push(virtualStay(tonight, "end"));
+    return out;
+  }
+  function virtualStay(s, role) {
+    return Object.assign({}, s, {
+      id: "vs:" + role + ":" + s.id, virtual: role, srcId: s.id,
+      time: "", fixed: false, stayMin: 0,
+      arriveBy: "", fareAmount: null, fareFrom: "", costAmount: null, note: ""
+    });
+  }
   function updateDay(id, patch) { var t = _t(); var d = day(id); if (!d || !t) return; Object.assign(d, patch); if ("date" in patch) t.days.sort(byDate); notify(); }
   function removeDay(id) { var t = _t(); if (!t) return; t.days = t.days.filter(function (d) { return d.id !== id; }); notify(); }
 

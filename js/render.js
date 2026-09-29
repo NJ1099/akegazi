@@ -225,9 +225,13 @@
       ]);
     }
     ctx.canReorder = day.stops.length > 1;
-    var sched = ctx.schedule || TP.geo.buildSchedule(day.stops);
+    var route = ctx.route || day.stops;                      // 숙소 출발·귀가 가상 칸이 붙은 동선
+    var sched = ctx.schedule || TP.geo.buildSchedule(route);
     var schedMap = {}; sched.items.forEach(function (it) { schedMap[it.id] = it; });
-    day.stops.forEach(function (s, i) {
+    route.forEach(function (s, ri) {
+      var prev = ri > 0 ? route[ri - 1] : null;
+      if (s.virtual) { wrap.appendChild(stayRow(s, prev, ctx)); return; }
+      var i = day.stops.indexOf(s);
       var color = TP.maps.DOT[(ctx.dayIndex || 0) % TP.maps.DOT.length];
       var it = schedMap[s.id], timeText, est = false;
       if (s.time) { timeText = s.time; }                                                          // 사용자가 입력한 시각 우선
@@ -236,11 +240,30 @@
       var item = el("div.tl-item", { dataset: { stop: s.id } }, [
         el("div.tl-item__time" + (est ? ".tl-item__time--est" : ""), { text: timeText, title: est ? "예상 도착(추정)" : null }),
         el("div.tl-item__dot", { style: { "--dot": color, background: color, boxShadow: "0 0 0 4px var(--bg-2), 0 0 12px " + color } }),
-        stopCard(day, s, i > 0 ? day.stops[i - 1] : null, ctx, i)
+        stopCard(day, s, prev, ctx, i)
       ]);
       wrap.appendChild(item);
     });
     return wrap;
+  }
+  /* 숙소 출발/귀가 한 줄 — 카드가 아니라 얇은 줄(편집은 숙소 칸에서). 귀가 줄엔 마지막 장소→숙소 교통비와 길찾기. */
+  function stayRow(s, prev, ctx) {
+    var start = s.virtual === "start";
+    var cur = (ctx && ctx.currency) || "JPY";
+    var bits = [];
+    if (!start && prev && TP.geo.hasCoord(prev) && TP.geo.hasCoord(s)) {
+      var fare = legFare(prev, s, cur);
+      if (fare > 0) bits.push("🚌 " + TP.money.format(fare, cur) + " 예상");
+    }
+    return el("div.tl-stay" + (start ? ".tl-stay--start" : ".tl-stay--end"), null, [
+      el("span.tl-stay__icon", { text: "🏨" }),
+      el("span.tl-stay__text", null, [
+        el("span.tl-stay__role", { text: start ? "출발" : "숙소로" }),
+        el("span.tl-stay__name", { text: s.title || "숙소" })
+      ]),
+      bits.length ? el("span.tl-stay__fare", { text: bits.join(" ") }) : null,
+      (!start && prev) ? el("button.stop__act.tl-stay__go", { onclick: function (e) { e.stopPropagation(); openDir(prev, s); } }, ["길찾기"]) : null
+    ]);
   }
   function dashTime(i) { return "·"; }
 
@@ -394,16 +417,18 @@
     var km = estimable ? TP.geo.haversine(prev, s) / 1000 * 1.4 : null;
     return TP.money.estimateFare(km, mode, currency);
   }
-  function dayBudget(day, currency) {
+  /* route: 숙소 출발·귀가가 붙은 동선(store.routeOf). 없으면 장소 목록만 — 가상 칸은 경비가 비어 있어 교통비만 더해진다. */
+  function dayBudget(day, currency, route) {
     var byPay = { credit: 0, debit: 0, cash: 0, other: 0 }, byCat = {}, dest = 0, transport = 0;
-    (day.stops || []).forEach(function (s, i) {
+    var list = route || day.stops || [];
+    list.forEach(function (s, i) {
       if (typeof s.costAmount === "number" && s.costAmount > 0) {
         dest += s.costAmount;
         var pm = (s.payment === "credit" || s.payment === "debit" || s.payment === "cash") ? s.payment : "other";
         byPay[pm] += s.costAmount;
         var cat = inferCategory(s); byCat[cat] = (byCat[cat] || 0) + s.costAmount;
       }
-      if (i > 0) transport += legFare(day.stops[i - 1], s, currency);
+      if (i > 0) transport += legFare(list[i - 1], s, currency);
     });
     return { dest: dest, transport: transport, total: dest + transport, byPay: byPay, byCat: byCat };
   }
@@ -411,7 +436,7 @@
     var cur = (trip && trip.currency) || "JPY";
     var agg = { dest: 0, transport: 0, total: 0, byPay: { credit: 0, debit: 0, cash: 0, other: 0 }, byCat: {} };
     (trip && trip.days || []).forEach(function (d) {
-      var b = dayBudget(d, cur);
+      var b = dayBudget(d, cur, TP.store.routeOf(trip, d));
       agg.dest += b.dest; agg.transport += b.transport; agg.total += b.total;
       ["credit", "debit", "cash", "other"].forEach(function (k) { agg.byPay[k] += b.byPay[k]; });
       Object.keys(b.byCat).forEach(function (k) { agg.byCat[k] = (agg.byCat[k] || 0) + b.byCat[k]; });

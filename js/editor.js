@@ -78,8 +78,10 @@
     var dayObj = store.day(dayId);
     var prevStop = null;                                         // 교통비 추정용: 직전 장소
     if (dayObj) {
-      if (existing) { var ei = dayObj.stops.indexOf(existing); prevStop = ei > 0 ? dayObj.stops[ei - 1] : null; }
-      else { prevStop = dayObj.stops.length ? dayObj.stops[dayObj.stops.length - 1] : null; }
+      // 동선 기준(숙소 출발 칸 포함) — 타임라인·예산과 같은 "직전 장소"를 봐야 구간 요금이 어긋나지 않는다
+      var route = store.routeOf(trip, dayObj).filter(function (s) { return s.virtual !== "end"; });
+      if (existing) { var ei = route.indexOf(existing); prevStop = ei > 0 ? route[ei - 1] : null; }
+      else { prevStop = route.length ? route[route.length - 1] : null; }
     }
 
     modal(function (box, close) {

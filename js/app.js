@@ -112,6 +112,9 @@
       el("div.trip-head__meta", null, [el("span", { text: list.length ? list.length + "개의 여행" : "나라·일정별로 여행을 만들어 관리하세요" })])
     ]));
 
+    var today = findToday();
+    if (today) viewEl.appendChild(todayCard(today));
+
     if (!list.length) {
       viewEl.appendChild(el("div.empty", null, [
         el("div.empty__emoji", { html: "🧳" }),
@@ -134,6 +137,7 @@
           el("div.trip-card__title", { text: t.title || "이름 없는 여행" }),
           el("div.trip-card__meta", { text: (t.region ? "📍 " + t.region + " · " : "") + (range || "날짜 미정") + " · " + t.days.length + "일 · " + stopCount + "곳" })
         ]),
+        dDayBadge(t),
         el("span.trip-card__go", { html: "›" })
       ]);
       card.appendChild(el("button.card-del", {
@@ -145,6 +149,85 @@
 
     viewEl.appendChild(el("button.btn.btn--block", { style: { marginTop: "6px" }, onclick: newTrip }, ["+ 새 여행"]));
     viewEl.appendChild(el("button.btn.btn--block.btn--ghost", { style: { marginTop: "10px" }, onclick: function () { TP.insta.open(); } }, ["📸 인스타에서 장소 찾기"]));
+  }
+
+  /* ---------- 오늘 모드 ----------
+   * 여행 중에는 "지금 어디로 가지?"가 전부다. 여행 날짜가 오늘이면 홈·여행 화면 맨 위에
+   * 다음 장소 하나와 길찾기 버튼만 크게 띄운다(현재 위치 → 다음 장소). */
+  function findToday(onlyTrip) {
+    var today = U.todayISO();
+    var list = onlyTrip ? [onlyTrip] : store.trips().slice().sort(function (a, b) {
+      var act = store.activeId(); return (b.id === act) - (a.id === act);   // 보고 있던 여행 먼저
+    });
+    for (var i = 0; i < list.length; i++) {
+      var t = list[i];
+      for (var j = 0; j < t.days.length; j++) if (t.days[j].date === today) return { trip: t, day: t.days[j], idx: j };
+    }
+    return null;
+  }
+  /* 다음 장소 — 시각(입력값 또는 추정 도착)이 지금보다 뒤인 첫 장소. 시각이 하나도 없으면 첫 장소.
+   * 시각이 전부 지났으면 null(오늘 일정 끝). */
+  function nextStopIndex(trip, day) {
+    var stops = day.stops;
+    if (!stops.length) return null;
+    var sched = geo.buildSchedule(store.routeOf(trip, day));
+    var etaById = {}; sched.items.forEach(function (it) { etaById[it.id] = it.etaArrive; });
+    var d = new Date(), now = d.getHours() * 60 + d.getMinutes();
+    var anyTime = false;
+    for (var i = 0; i < stops.length; i++) {
+      var t = geo.hmToMin(stops[i].time);
+      if (t == null && etaById[stops[i].id] != null) t = etaById[stops[i].id];
+      if (t == null) continue;
+      anyTime = true;
+      if (t >= now - 20) return i;          // 20분 안쪽으로 막 지난 곳은 "지금 가는 중"으로 본다
+    }
+    return anyTime ? null : 0;
+  }
+  var todaySkip = {};   // 화면에서 "다음 ›"으로 넘겨 본 칸 수(날짜별 · 새로고침하면 처음으로)
+  function todayCard(info) {
+    var t = info.trip, d = info.day;
+    var base = nextStopIndex(t, d);
+    var k = d.id, i = (base == null) ? null : base + (todaySkip[k] || 0);
+    if (i != null && i >= d.stops.length) { todaySkip[k] = 0; i = base; }
+    var s = (i != null) ? d.stops[i] : null;
+    var goDay = function () { location.hash = "#/trip/" + t.id + "/day/" + d.id; };
+    var head = el("div.today__head", null, [
+      el("span.today__eyebrow", { text: "오늘 · " + (t.title || "여행") + " Day " + (info.idx + 1) }),
+      el("button.link-btn", { onclick: goDay }, ["일정 보기 ›"])
+    ]);
+    if (!d.stops.length) {
+      return el("div.today", null, [head, el("div.today__empty", { text: "오늘 일정에 장소가 아직 없어요." })]);
+    }
+    if (!s) {
+      return el("div.today", null, [head, el("div.today__empty", { text: "오늘 일정은 다 끝났어요. 수고했어요 🙌" })]);
+    }
+    var tm = s.time || s.arriveTime || "";
+    return el("div.today", null, [
+      head,
+      el("div.today__label", { text: i === base ? "다음 장소" : (i - base + 1) + "번째 뒤" }),
+      el("div.today__stop", null, [
+        el("span.today__icon", { text: R.typeIcon(s) }),
+        el("span.today__name", { text: s.title || "(이름 없음)" }),
+        tm ? el("span.today__time", { text: tm }) : null
+      ]),
+      el("div.today__actions", null, [
+        el("button.btn.today__go", { onclick: function () {
+          if (!geo.hasCoord(s) && !s.title && !s.address) { U.toast("이 장소의 위치가 아직 없어요"); return; }
+          window.open(geo.dirURL(null, s, "transit"), "_blank", "noopener");   // 출발지 비움 = 현재 위치에서
+        } }, ["길찾기"]),
+        (i + 1 < d.stops.length) ? el("button.btn.btn--ghost.today__next", { onclick: function () { todaySkip[k] = (todaySkip[k] || 0) + 1; render(); } }, ["다음 ›"]) : null
+      ])
+    ]);
+  }
+  /* 여행 카드의 D-day — 떠나기 전엔 D-n, 여행 중엔 "여행 중" */
+  function dDayBadge(t) {
+    var ds = t.days.map(function (d) { return d.date; }).filter(Boolean).sort();
+    if (!ds.length) return null;
+    var today = U.todayISO();
+    if (today > ds[ds.length - 1]) return null;
+    if (today >= ds[0]) return el("span.dday.dday--now", { text: "여행 중" });
+    var n = U.daysBetween(today, ds[0]);
+    return el("span.dday", { text: "D-" + n });
   }
 
   /* ---------- 여행: 날짜 목록 ---------- */
@@ -169,8 +252,10 @@
           ? el("span", { text: "· " + TP.money.rateLabel(trip.currency, trip.homeCurrency) }) : null
       ])
     ]));
+    var tToday = findToday(trip);
+    if (tToday) viewEl.appendChild(todayCard(tToday));
     ensureFx(trip);
-    var tripBud = R.budgetBanner(R.tripBudget(trip), trip.currency || "JPY", "여행 총 예산", trip.homeCurrency || "");
+    var tripBud =R.budgetBanner(R.tripBudget(trip), trip.currency || "JPY", "여행 총 예산", trip.homeCurrency || "");
     if (tripBud) viewEl.appendChild(tripBud);
 
     if (!trip.days.length) {

@@ -255,6 +255,8 @@
     });
     return out;
   }
+  /* 그날의 실제 동선 — 장소 목록(숙소 출발·귀가는 ③에서 덧붙인다) */
+  function routeOf(trip, day) { return (day && day.stops) || []; }
   function updateDay(id, patch) { var t = _t(); var d = day(id); if (!d || !t) return; Object.assign(d, patch); if ("date" in patch) t.days.sort(byDate); notify(); }
   function removeDay(id) { var t = _t(); if (!t) return; t.days = t.days.filter(function (d) { return d.id !== id; }); notify(); }
 
@@ -304,7 +306,7 @@
     addTrip: addTrip, addTripData: addTripData, updateTrip: updateTrip, removeTrip: removeTrip, reset: reset,
     customCats: customCats, addCustomCat: addCustomCat, removeCustomCat: removeCustomCat, usedCustomCats: usedCustomCats,
     setTitle: setTitle, day: day, dayAt: dayAt, dayIndex: dayIndex, stop: stop,
-    addDay: addDay, ensureDays: ensureDays, stayOn: stayOn, updateDay: updateDay, removeDay: removeDay,
+    addDay: addDay, ensureDays: ensureDays, stayOn: stayOn, routeOf: routeOf, updateDay: updateDay, removeDay: removeDay,
     addStop: addStop, updateStop: updateStop, removeStop: removeStop,
     reorderStops: reorderStops, moveStop: moveStop, moveStopToDay: moveStopToDay,
     exportJSON: exportJSON, importJSON: importJSON,

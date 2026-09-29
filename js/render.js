@@ -63,7 +63,8 @@
   }
 
   /* ---- Stop 카드 ---- */
-  function stopCard(day, stop, prevStop, ctx, idx) {
+  /* arriveMin: 이 장소 도착 시각(분 · 입력값 또는 추정). 영업시간 검사에 쓴다 — 모르면 null */
+  function stopCard(day, stop, prevStop, ctx, idx, arriveMin) {
     var ci = closingInfo(stop, day);
     var card = el("div.stop", { dataset: { stop: stop.id } });
     if (stop.fixed) card.classList.add("is-fixed");
@@ -169,6 +170,12 @@
       ]));
     }
 
+    // 영업시간 밖 도착 경고(구글 영업 구간이 있을 때만 · 휴무일이면 아래 휴무 경고가 대신한다)
+    var hw = hoursWarning(stop, day, arriveMin);
+    if (hw && !ci.conflict) {
+      card.appendChild(el("div.stop__conflict", null, [el("span", { html: "🕐" }), el("span", { text: hw })]));
+    }
+
     // 휴무 충돌 경고
     if (ci.conflict) {
       card.appendChild(el("div.stop__conflict", null, [
@@ -203,6 +210,21 @@
     return card;
   }
 
+  function hoursWarning(stop, day, arriveMin) {
+    var ps = stop.openPeriods;
+    if (!ps || !ps.length || arriveMin == null || !day || !day.date) return "";
+    var G = TP.geo, wd = U.weekdayIdx(day.date);
+    var open = G.isOpenAt(ps, wd, arriveMin);
+    var today = G.hoursOn(ps, wd);
+    if (open === false) {
+      return G.minToHm(arriveMin) + " 도착 예정인데 그때는 문을 닫아요" + (today ? " (" + U.weekdayKo(day.date) + " " + today + ")" : " (이 요일 휴무)");
+    }
+    var close = G.closesAt(ps, wd, arriveMin);
+    if (close != null && close - arriveMin < Math.min(60, TP.geo.defaultDwell(stop.type))) {
+      return G.minToHm(close) + "에 닫아요 — " + G.minToHm(arriveMin) + " 도착이면 " + (close - arriveMin) + "분밖에 없어요";
+    }
+    return "";
+  }
   function openDir(from, to) {
     if (!locOK(to)) { U.toast("도착지 위치를 먼저 입력하세요"); return; }
     var url = TP.geo.dirURL(from && locOK(from) ? from : null, to, "transit");
@@ -234,13 +256,15 @@
       var i = day.stops.indexOf(s);
       var color = TP.maps.DOT[(ctx.dayIndex || 0) % TP.maps.DOT.length];
       var it = schedMap[s.id], timeText, est = false;
+      var arriveMin = TP.geo.hmToMin(s.time);
+      if (arriveMin == null && sched.active && it && it.etaArrive != null) arriveMin = it.etaArrive;
       if (s.time) { timeText = s.time; }                                                          // 사용자가 입력한 시각 우선
       else if (sched.active && it && it.etaArrive != null) { timeText = TP.geo.minToHm(it.etaArrive); est = true; }   // 비어 있으면 추정 ETA
       else timeText = dashTime(i);
       var item = el("div.tl-item", { dataset: { stop: s.id } }, [
         el("div.tl-item__time" + (est ? ".tl-item__time--est" : ""), { text: timeText, title: est ? "예상 도착(추정)" : null }),
         el("div.tl-item__dot", { style: { "--dot": color, background: color, boxShadow: "0 0 0 4px var(--bg-2), 0 0 12px " + color } }),
-        stopCard(day, s, prev, ctx, i)
+        stopCard(day, s, prev, ctx, i, arriveMin)
       ]);
       wrap.appendChild(item);
     });

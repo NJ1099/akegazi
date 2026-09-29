@@ -224,17 +224,33 @@
                 f.address = r.address;
                 if (!f.title) { f.title = r.name; titleInput.value = r.name; }
                 if (addrInput) addrInput.value = f.address;
-                var filledHours = false;
-                if (r.hours && !((f.openHours || "").trim())) { f.openHours = r.hours; if (openHoursInput) openHoursInput.value = r.hours; filledHours = true; }   // 구글 영업시간 자동 채움(비어 있을 때만)
+                var samePlace = !!(r.placeId && r.placeId === f.placeId);
+                f.placeId = r.placeId || "";
+                if (!samePlace) f.openPeriods = [];               // 다른 곳을 골랐으면 옛 영업 구간은 버린다
+                if (r.hours && !((f.openHours || "").trim())) { f.openHours = r.hours; if (openHoursInput) openHoursInput.value = r.hours; }   // OSM 영업시간(있으면)
                 results.innerHTML = ""; openedTitle = (titleInput.value || "").trim(); showPicked();
                 if (pickMap && pickMap.setView) pickMap.setView(r.lat, r.lon);
-                U.toast(filledHours ? "위치·영업시간을 설정했어요" : "위치를 설정했어요");
+                U.toast("위치를 설정했어요");
+                if (r.placeId) fillHours(r.placeId, !samePlace);
               }
             }, [el("div.name", { text: r.name }), el("div.addr", { text: r.address })]));
           });
         }).catch(function () {
           if (mySeq !== searchSeq) return;
           results.innerHTML = ""; results.appendChild(el("div.geo-result", { text: "검색에 실패했어요. 잠시 후 다시 시도하세요." }));
+        });
+      }
+      /* 고른 장소의 영업시간 — 구글 Place Details 로 한 곳만 받아 영업시간·휴무 요일을 채운다.
+       * 사람이 적어 둔 값은 덮지 않는다(다른 장소로 바꿨을 때만 영업시간 줄을 새로 쓴다). */
+      function fillHours(pid, replace) {
+        TP.geo.placeHours(pid).then(function (h) {
+          if (!h || f.placeId !== pid) return;                 // 그 사이 다른 장소를 골랐으면 버린다
+          f.openPeriods = h.periods || [];
+          var wrote = [];
+          if (h.text && (replace || !(f.openHours || "").trim())) { f.openHours = h.text; if (openHoursInput) openHoursInput.value = h.text; wrote.push("영업시간"); }
+          var closed = TP.geo.closedWeekdays(f.openPeriods);
+          if (closed.length && (replace || !f.closingDays.length)) { f.closingDays = closed.slice(); syncClosingChips(); wrote.push("휴무 요일"); }
+          if (wrote.length) U.toast(wrote.join("·") + "을 채웠어요");
         });
       }
       function revealResults() {
@@ -389,6 +405,7 @@
 
       // 영업시간 (이름으로 검색해 선택하면 구글 영업시간 자동 채움)
       var openHoursInput = el("input.input", { value: f.openHours, placeholder: "예: 11:00~23:00 (L.O.22:00)", oninput: function () { f.openHours = this.value; } });
+      // 영업시간 칸을 직접 고치면 구글 영업 구간(도착 시각 검사용)은 그대로 둔다 — 글자는 메모일 수 있다
       adv.appendChild(field("영업시간", openHoursInput, "이름으로 검색해 선택하면 구글 영업시간이 자동으로 채워져요 (직접 수정 가능)"));
 
       // 휴무 요일
@@ -396,7 +413,7 @@
       U.WEEKDAYS.forEach(function (w, idx) {
         var on = f.closingDays.indexOf(idx) >= 0;
         wdWrap.appendChild(el("button.chip" + (on ? ".is-on" : ""), {
-          type: "button",
+          type: "button", dataset: { wd: String(idx) },
           onclick: function () {
             var i = f.closingDays.indexOf(idx);
             if (i >= 0) { f.closingDays.splice(i, 1); this.classList.remove("is-on"); }
@@ -404,6 +421,9 @@
           }
         }, [w]));
       });
+      function syncClosingChips() {
+        U.$$(".chip", wdWrap).forEach(function (c) { c.classList.toggle("is-on", f.closingDays.indexOf(+c.dataset.wd) >= 0); });
+      }
       adv.appendChild(field("휴무 요일", wdWrap, "이 요일에 방문 일정이 잡히면 자동 경고"));
       adv.appendChild(field("휴무 비고",
         el("input.input", { value: f.closingNote, placeholder: "예: 부정기 휴무 / 연중무휴 / 24시간", oninput: function () { f.closingNote = this.value; } })));

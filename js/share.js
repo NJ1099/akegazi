@@ -12,7 +12,7 @@
     ab: "arriveBy", fa: "fareAmount", ca: "costAmount", pm: "payment", cc: "costCategory",
     in: "indoor", oh: "openHours", cd: "closingDays",
     cn: "closingNote", rs: "reservation", rn: "reservationNote", fx: "fixed",
-    ph: "photoSpot", nt: "note", co: "cost"
+    ph: "photoSpot", nt: "note", co: "cost", op: "openPeriods"
   };
 
   function round6(v) { return Math.round(v * 1e6) / 1e6; }
@@ -47,6 +47,7 @@
     if (s.photoSpot) c.ph = 1;
     if (s.note) c.nt = s.note;
     if (s.cost) c.co = s.cost;
+    if (s.openPeriods && s.openPeriods.length) c.op = s.openPeriods;
     return c;
   }
   function expandStop(c) {

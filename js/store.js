@@ -9,6 +9,7 @@
  *           arriveBy, fareAmount,                       // 이전→여기 이동수단 + 예상/입력 교통비
  *           costAmount, payment, costCategory,          // 경비 + 결제수단(credit/debit/cash) + 분류(food/ticket/lodging/shopping/etc)
  *           indoor, openHours, closingDays:[0..6], closingNote,
+ *           placeId, openPeriods:[[여는 분, 닫는 분]],          // 구글 장소 id + 영업 구간(일요일 0시 기준 주간 분)
  *           reservation, reservationNote, fixed, photoSpot, note, cost }
  *
  * 날짜/장소 변경 API는 '활성 여행(activeTrip)'을 대상으로 동작한다.
@@ -54,7 +55,7 @@
       arriveTime: "", departTime: "", stayMin: null,
       checkIn: "", checkOut: "",
       arriveBy: "", fareAmount: null, fareFrom: "", costAmount: null, payment: "", costCategory: "",
-      indoor: null, openHours: "", closingDays: [], closingNote: "",
+      indoor: null, openHours: "", closingDays: [], closingNote: "", placeId: "", openPeriods: [],
       reservation: "none", reservationNote: "", fixed: false, photoSpot: false,
       note: "", cost: ""
     }, partial || {});
@@ -91,6 +92,11 @@
     if (s.costCategory && !BUILTIN_CAT_KEYS[s.costCategory] && !/^uc_/.test(String(s.costCategory))) s.costCategory = "";
     // 가져오기/공유 데이터 방어: closingDays는 0~6 정수 요일만
     s.closingDays = (Array.isArray(s.closingDays) ? s.closingDays : []).map(Number).filter(function (d) { return d >= 0 && d <= 6 && Math.floor(d) === d; });
+    s.placeId = (typeof s.placeId === "string" && s.placeId.length <= 300) ? s.placeId : "";
+    // 영업 구간: [여는 분, 닫는 분] 정수 쌍만(0 ≤ 여는 < 닫는 ≤ 2주) — 공유 링크로 들어온 이상한 값은 버린다
+    s.openPeriods = (Array.isArray(s.openPeriods) ? s.openPeriods : []).filter(function (p) {
+      return Array.isArray(p) && p.length === 2 && isFinite(p[0]) && isFinite(p[1]) && p[0] >= 0 && p[0] < 10080 && p[1] > p[0] && p[1] <= 20160;
+    }).map(function (p) { return [Math.round(p[0]), Math.round(p[1])]; }).slice(0, 28);
     return s;
   }
 

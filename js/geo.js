@@ -84,12 +84,16 @@
     return p;
   }
 
-  // 구글 Places (New) Text Search — 영업시간(regularOpeningHours)까지 함께 받아 자동 채움
+  /* 구글 Places (New) Text Search — 이름·주소·좌표·장소 id 만 받는다.
+   * 🔴 영업시간(regularOpeningHours)을 여기서 받지 말 것. 필드 하나 때문에 검색 전체가 한 등급 비싼
+   * 요금(Text Search Enterprise · 무료 월 1,000건)으로 매겨진다 — 타이핑할 때마다 나가는 검색이라
+   * 하루 한도 150회를 쓰면 무료 범위를 넘는다. 영업시간은 사용자가 결과를 **고른 한 곳만**
+   * placeHours() 로 따로 받는다(21차). */
   function googleGeocode(query) {
     return TP.gmaps.lib("places").then(function (places) {
       return places.Place.searchByText({
         textQuery: query,
-        fields: ["displayName", "formattedAddress", "location", "regularOpeningHours"],
+        fields: ["id", "displayName", "formattedAddress", "location"],
         language: "ko",
         maxResultCount: 8
       });
@@ -103,7 +107,7 @@
         }
         var nm = p.displayName;
         if (nm && typeof nm === "object") nm = nm.text || "";   // 혹시 객체로 올 때
-        return { name: nm || query, address: p.formattedAddress || "", lat: normLat(lat), lon: normLon(lon), hours: compactHours(p.regularOpeningHours) };
+        return { name: nm || query, address: p.formattedAddress || "", lat: normLat(lat), lon: normLon(lon), placeId: p.id || "", hours: "" };
       }).filter(function (r) { return r.lat != null && r.lon != null; });
     }, function (err) {
       // 권한·결제 거부는 다시 시도해도 같다 → 기억해 두고 다음 검색부터 바로 키리스로
@@ -143,6 +147,99 @@
       var label = g.days.length >= 3 ? (g.days[0] + "~" + g.days[g.days.length - 1]) : g.days.join("·");
       return label + " " + g.time;
     }).join(", ");
+  }
+
+  /* ---------- 영업시간(고른 장소 하나만) ----------
+   * Place Details 로 regularOpeningHours 만 받는다. 같은 장소는 30일 기억하고, 브라우저당 하루
+   * HOURS_DAILY 회로 묶는다(무료 범위 방어 — 사람이 결과를 고를 때만 나가므로 평소엔 모자라지 않다).
+   * 반환: { text: "월~금 11:00~22:00, …", periods: [[여는 분, 닫는 분], …] } 또는 null.
+   * 분 = 일요일 0시부터 센 주간 분(0~10080). 닫는 분이 여는 분보다 작으면 +10080(자정 넘김). */
+  var HOURS_LS_KEY = "akegazi.hours.v1";
+  var HOURS_TTL = 30 * 24 * 3600 * 1000;
+  var HOURS_DAILY = 60;
+  var hoursMem = (function () { try { return JSON.parse(localStorage.getItem(HOURS_LS_KEY)) || {}; } catch (e) { return {}; } })();
+  function hoursSave() {
+    try {
+      var keys = Object.keys(hoursMem).filter(function (k) { return k !== "_n"; });
+      if (keys.length > 300) {
+        keys.sort(function (a, b) { return hoursMem[a]._t - hoursMem[b]._t; });
+        keys.slice(0, keys.length - 300).forEach(function (k) { delete hoursMem[k]; });
+      }
+      localStorage.setItem(HOURS_LS_KEY, JSON.stringify(hoursMem));
+    } catch (e) {}
+  }
+  var WEEK = 10080;
+  function normPeriods(roh) {
+    var ps = (roh && roh.periods) || [];
+    var out = [];
+    ps.forEach(function (p) {
+      var o = p && p.open;
+      if (!o || typeof o.day !== "number") return;
+      var om = o.day * 1440 + (o.hour || 0) * 60 + (o.minute || 0);
+      var c = p.close, cm;
+      if (!c || typeof c.day !== "number") cm = om + WEEK;              // 닫는 시각 없음 = 24시간 영업
+      else { cm = c.day * 1440 + (c.hour || 0) * 60 + (c.minute || 0); if (cm <= om) cm += WEEK; }
+      out.push([om, cm]);
+    });
+    return out.slice(0, 28);
+  }
+  function placeHours(placeId) {
+    if (!placeId || !TP.gmaps || !TP.gmaps.hasKey()) return Promise.resolve(null);
+    var hit = hoursMem[placeId];
+    if (hit && Date.now() - hit._t < HOURS_TTL) return Promise.resolve(hit.v);
+    var today = TP.util.todayISO(), n = hoursMem._n || {};
+    if (n.d !== today) n = { d: today, c: 0 };
+    if (n.c >= HOURS_DAILY) return Promise.resolve(null);
+    n.c++; hoursMem._n = n;
+    return TP.gmaps.lib("places").then(function (places) {
+      var place = new places.Place({ id: placeId, requestedLanguage: "ko" });
+      return place.fetchFields({ fields: ["regularOpeningHours"] }).then(function () { return place; });
+    }).then(function (place) {
+      var roh = place.regularOpeningHours;
+      var v = roh ? { text: compactHours(roh), periods: normPeriods(roh) } : null;
+      hoursMem[placeId] = { _t: Date.now(), v: v }; hoursSave();        // 영업시간 없는 곳(공원 등)도 기억 — 다시 사지 않게
+      return v;
+    }).catch(function () { hoursSave(); return null; });
+  }
+  /* 그 요일·시각(분)에 열려 있나 — periods 가 비면 null(모름) */
+  function isOpenAt(periods, weekday, min) {
+    if (!periods || !periods.length || weekday < 0 || min == null) return null;
+    var t = weekday * 1440 + min;
+    for (var i = 0; i < periods.length; i++) {
+      var o = periods[i][0], c = periods[i][1];
+      if ((t >= o && t < c) || (t + WEEK >= o && t + WEEK < c)) return true;
+    }
+    return false;
+  }
+  /* 그 시각에 열려 있으면 닫는 시각(그날 기준 분 · 자정 넘기면 1440 이상), 아니면 null. 24시간 영업도 null */
+  function closesAt(periods, weekday, min) {
+    if (!periods || weekday < 0 || min == null) return null;
+    var t = weekday * 1440 + min;
+    for (var i = 0; i < periods.length; i++) {
+      var o = periods[i][0], c = periods[i][1];
+      if (c - o >= WEEK) return null;
+      if (t >= o && t < c) return min + (c - t);
+      if (t + WEEK >= o && t + WEEK < c) return min + (c - t - WEEK);
+    }
+    return null;
+  }
+  /* 그 요일에 여는 시간대 문자열("11:00~22:00") — 경고 문구용 */
+  function hoursOn(periods, weekday) {
+    if (!periods || weekday < 0) return "";
+    return periods.filter(function (p) { return Math.floor(p[0] / 1440) % 7 === weekday; }).map(function (p) {
+      if (p[1] - p[0] >= WEEK) return "24시간";
+      return minToHm(p[0] % 1440) + "~" + minToHm(p[1] % 1440);
+    }).join(", ");
+  }
+  /* 문을 아예 안 여는 요일 — 그날 시작하는 영업 구간이 하나도 없으면. 24시간 영업이면 없음. */
+  function closedWeekdays(periods) {
+    if (!periods || !periods.length) return [];
+    if (periods.some(function (p) { return p[1] - p[0] >= WEEK; })) return [];
+    var open = {};
+    periods.forEach(function (p) { open[Math.floor(p[0] / 1440) % 7] = 1; });
+    var out = [];
+    for (var d = 0; d < 7; d++) if (!open[d]) out.push(d);
+    return out.length === 7 ? [] : out;
   }
 
   /* Nominatim 은 "초당 1회" 정책이다. 인스타 장소 37곳을 한꺼번에 담았더니(곳마다 이름·주소·이름변환 후보로
@@ -557,6 +654,7 @@
     haversine: haversine, hasCoord: hasCoord, fmtDist: fmtDist,
     normLat: normLat, normLon: normLon,
     geocode: geocode, optimizeOrder: optimizeOrder, pathLen: pathLen, compactHours: compactHours,
+    placeHours: placeHours, normPeriods: normPeriods, isOpenAt: isOpenAt, closesAt: closesAt, hoursOn: hoursOn, closedWeekdays: closedWeekdays,
     buildSchedule: buildSchedule, minToHm: minToHm, hmToMin: hmToMin, defaultDwell: defaultDwell,
     cachedRoad: cachedRoad, ensureRoad: ensureRoad,
     dirURL: dirURL, multiDirURL: multiDirURL, searchURL: searchURL

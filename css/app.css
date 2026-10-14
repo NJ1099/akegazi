@@ -1125,3 +1125,8 @@ div.list-row { cursor: default; }
 .help__list { margin: 0 0 18px; padding-left: 18px; display: flex; flex-direction: column; gap: 9px; }
 .help__list li { font-size: 15px; line-height: 1.5; color: var(--text-2); }
 .today__head .info-btn { width: 18px; height: 18px; font-size: 11px; margin: 0 auto 0 0; align-self: center; }
+
+/* 장소 이름 + 검색 버튼 한 줄 (자동 검색 대신 버튼·엔터로 찾는다) */
+.search-row { display: flex; gap: 8px; align-items: stretch; }
+.search-row .input { flex: 1; min-width: 0; }
+.search-row__btn { flex: none; white-space: nowrap; min-height: 44px; }

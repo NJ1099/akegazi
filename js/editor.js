@@ -107,7 +107,9 @@
       });
       box.appendChild(el("div.field", null, [typeWrap]));
       var nameLabel = el("label", { text: NAME_Q[f.type] || "어디에 가나요?" });
-      box.appendChild(el("div.field", null, [nameLabel, el("div", null, [titleInput, results, pickedLabel])]));
+      // 검색은 버튼·엔터로만 한다 — 구글 검색은 모든 사용자가 하루 한도를 나눠 쓰므로 타이핑마다 나가면 금방 바닥난다
+      var searchBtn = el("button.btn.btn--sm.search-row__btn", { type: "button", onclick: function () { searchSeq++; doSearch(); } }, ["🔎 검색"]);
+      box.appendChild(el("div.field", null, [nameLabel, el("div", null, [el("div.search-row", null, [titleInput, searchBtn]), results, pickedLabel])]));
 
       // ----- 숙박 기간 (숙소 타입에서만) — 체크인 + 몇 박 → 그 날짜들이 Day 로 만들어진다 -----
       var dayDate = (dayObj && dayObj.date) || "";
@@ -256,16 +258,13 @@
       function revealResults() {
         try { results.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch (e) {}
       }
-      // 위치가 이미 있어도 '이름을 바꿨으면' 검색한다. 예전엔 좌표가 있으면 자동검색을 통째로 건너뛰어
-      // 수정 화면에서 이름을 고쳐도 결과가 안 나왔다(사용자 제보 2026-09-28). 처음 열었을 때 이름 그대로면 조용히 둔다.
       var openedTitle = (f.title || "").trim();
-      var liveSearch = U.debounce(function () {
-        var q = (titleInput.value || "").trim();
-        if (q.length < 2) { searchSeq++; results.innerHTML = ""; return; }
-        if (!TP.geo.hasCoord(f) || q !== openedTitle) doSearch();
-      }, 700);   // 글자마다가 아니라 타이핑을 멈춘 뒤 한 번 — 구글 검색은 하루 30회 한도라 아껴 쓴다
-      titleInput.addEventListener("input", liveSearch);                                       // 이름 입력 → 자동 검색
-      titleInput.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); doSearch(); } });
+      // 자동 검색은 하지 않는다(사용자 요청 2026-10-14) — 구글 장소 검색은 전체 사용자가 하루 150회를 나눠 쓰는데,
+      // 타이핑을 멈출 때마다 검색이 나가 한도가 금방 바닥났다. 이름을 지우면 지난 결과만 치운다.
+      titleInput.addEventListener("input", function () {
+        if ((titleInput.value || "").trim().length < 2) { searchSeq++; results.innerHTML = ""; }
+      });
+      titleInput.addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); searchSeq++; doSearch(); } });
 
       // 지도에서 선택 토글 (직접 검색 버튼 포함)
       var mapBox = el("div.modal__pickmap", { style: { display: "none" } });
@@ -291,7 +290,7 @@
       var reSearchBtn = el("button.btn.btn--ghost.btn--sm", { type: "button", style: { marginLeft: "8px" }, onclick: function () { searchSeq++; doSearch(); } }, ["🔎 이름으로 다시 찾기"]);
 
       adv.appendChild(field("위치", el("div", null, [el("div", null, [mapToggle, reSearchBtn]), mapBox]),
-        "이름으로 자동 검색되며, 안 맞으면 지도에서 직접 찍거나 다시 검색하세요"));
+        "이름 옆 ‘검색’으로 찾고, 안 맞으면 지도에서 직접 찍거나 다시 검색하세요"));
 
       // 주소
       var addrInput = el("input.input", { value: f.address, placeholder: "주소 (선택)", oninput: function () { f.address = this.value; } });
@@ -748,17 +747,29 @@
       showRate();
 
       if (!existing) {
+        // 가는 날을 고르면 오는 날 달력이 바로 열리고, 가는 날 이전은 고를 수 없게 한다(사용자 요청 2026-10-14).
+        // 오는 날이 비어 있으면 가는 날로 채워 둔다 — 그래야 달력이 오늘이 아니라 가는 날의 달에서 열린다.
+        var endInput = el("input.input", { type: "date", value: f.end, min: f.start || null, oninput: function () { f.end = this.value; } });
+        var startInput = el("input.input", { type: "date", value: f.start, onchange: function () {
+          f.start = this.value;
+          endInput.min = f.start || "";
+          if (!f.start) return;
+          if (!f.end || f.end < f.start) { f.end = f.start; endInput.value = f.start; }
+          endInput.focus();
+          try { if (endInput.showPicker) endInput.showPicker(); } catch (e) {}   // 사용자 동작 직후가 아니면 막힐 수 있다 — 그땐 포커스만
+        } });
         box.appendChild(field("언제 가나요? (선택)", el("div.row", null, [
-          wrapLabeled("가는 날", el("input.input", { type: "date", value: f.start, oninput: function () { f.start = this.value; } })),
-          wrapLabeled("오는 날", el("input.input", { type: "date", value: f.end, oninput: function () { f.end = this.value; } }))
+          wrapLabeled("가는 날", startInput),
+          wrapLabeled("오는 날", endInput)
         ])));
-        tripAdv.appendChild(field("✈️ 비행기 시각", el("div.row", null, [
+        // 비행기 시각은 '더 설정하기' 안에 있으면 못 찾는다 — 날짜 바로 밑에 꺼내 둔다(사용자 요청 2026-10-14)
+        box.appendChild(field("✈️ 비행기 시각 (선택)", el("div.row", null, [
           wrapLabeled("도착 시각(첫날)", timeInput(f.arriveTime, function (v) { f.arriveTime = v; })),
           wrapLabeled("출발 시각(마지막날)", timeInput(f.departTime, function (v) { f.departTime = v; }))
         ]), "넣으면 첫날 도착공항·마지막날 출발공항을 고정 일정으로 자동 추가(편집 가능)"));
       }
       box.appendChild(el("details.more", { open: !!existing }, [
-        el("summary.more__sum", null, ["더 설정하기", el("span.more__hint", { text: existing ? "통화 · 환율" : "통화 · 환율 · 비행기 시각" })]),
+        el("summary.more__sum", null, ["더 설정하기", el("span.more__hint", { text: "통화 · 환율" })]),
         tripAdv
       ]));
 

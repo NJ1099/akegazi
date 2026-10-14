@@ -1,0 +1,23 @@
+{
+  "name": "akegazi-toss",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "sync": "node scripts/sync-web.mjs",
+    "dev": "node scripts/sync-web.mjs && vite dev",
+    "build": "node scripts/sync-web.mjs && tsc --noEmit && vite build && ait build",
+    "build:web": "node scripts/sync-web.mjs && tsc --noEmit && vite build",
+    "deploy": "ait deploy"
+  },
+  "dependencies": {
+    "@apps-in-toss/web-framework": "3.8.0"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vite": "7.1.12"
+  }
+}

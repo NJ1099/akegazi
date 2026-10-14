@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.ait
+.granite/
+# scripts/sync-web.mjs가 만드는 파일
+web/
+index.html
+.env.local

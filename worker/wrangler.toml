@@ -17,5 +17,5 @@ binding = "AI"
 
 [vars]
 PROVIDER = "workers-ai"
-# 허용 사이트(쉼표 구분). localhost 는 로컬 확인용.
-ALLOWED_ORIGINS = "https://nj1099.github.io,http://localhost:4701"
+# 허용 사이트(쉼표 구분). tossmini.com 두 곳은 토스 미니앱(실서비스 · 콘솔 QR 테스트). localhost 는 로컬 확인용.
+ALLOWED_ORIGINS = "https://nj1099.github.io,https://akegazi.apps.tossmini.com,https://akegazi.private-apps.tossmini.com,http://localhost:4701"

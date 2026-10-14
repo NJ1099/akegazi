@@ -41,6 +41,9 @@ function applySafeArea(): void {
   } catch { /* 브라우저에서는 CSS env() 기본값을 써요 */ }
 }
 applySafeArea();
+// 3) 뒤로가기 버튼 하나만: 토스 내비게이션 바에 이미 뒤로가기가 있어서 웹 화면의 ← 버튼은 숨겨요.
+//    (2026-10-14 검수 반려 사유 "내비게이션 바의 뒤로가기와 미니앱 헤더의 뒤로가기가 함께 노출")
+//    버튼은 DOM 에 남겨 두고 보이지만 않게 해요 — 위 handleBack 이 그 버튼의 hidden 상태와 click 을 그대로 써요.
 const style = document.createElement('style');
-style.textContent = 'body{padding-bottom:var(--safe-bottom,env(safe-area-inset-bottom,0px));}';
+style.textContent = 'body{padding-bottom:var(--safe-bottom,env(safe-area-inset-bottom,0px));}#navBack{display:none!important;}';
 document.head.append(style);

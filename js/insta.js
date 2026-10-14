@@ -85,6 +85,23 @@
   }
   /* 인스타는 서버 요청을 가끔 막는다(2026-10-14 실측 12번 중 2번 · 워커 안에서 다시 시도해도 같은 요청 안에서는
    * 계속 막힌다). 새 요청은 대개 통하므로 "읽지 못했어요"(502)면 앱에서 두 번 더 보낸다. */
+  /* 같은 게시물 결과는 기기에도 30일 기억한다 — 다시 넣어도 하루 무료 분석량을 쓰지 않는다(2026-10-14). */
+  var LINK_LS = "akegazi.instalink.v1";
+  function linkKey(url) { var m = String(url).match(/instagram\.com\/(?:[\w.]+\/)?(?:p|reels?|tv)\/([\w-]+)/); return m ? m[1] : ""; }
+  function linkMem() { try { return JSON.parse(localStorage.getItem(LINK_LS)) || {}; } catch (e) { return {}; } }
+  function cachedLink(url) {
+    var k = linkKey(url), mem = linkMem(), hit = k && mem[k];
+    if (hit && Date.now() - hit.t < 30 * 24 * 3600 * 1000) return Promise.resolve(hit.v);
+    return postLink(url, 0).then(function (v) {
+      if (k && v && v.places && v.places.length) {
+        mem = linkMem(); mem[k] = { t: Date.now(), v: v };
+        var keys = Object.keys(mem);
+        if (keys.length > 50) keys.sort(function (a, b) { return mem[a].t - mem[b].t; }).slice(0, keys.length - 50).forEach(function (x) { delete mem[x]; });
+        try { localStorage.setItem(LINK_LS, JSON.stringify(mem)); } catch (e) {}
+      }
+      return v;
+    });
+  }
   function postLink(url, tries) {
     return post("/link", { url: url }).catch(function (e) {
       if (tries >= 2 || !/읽지 못했어요/.test(String(e && e.message))) throw e;
@@ -96,7 +113,7 @@
    * 링크만으로는 인스타가 첫 사진과 캡션만 내준다(넘겨 보는 사진은 로그인 벽 뒤) — link.imagesFromLink 로 안내한다. */
   function analyze(images, caption, url) {
     var jobs = [];
-    if (url) jobs.push(postLink(url, 0));
+    if (url) jobs.push(cachedLink(url));
     if (images.length || (caption && !url)) jobs.push(post("/", {
       images: images.map(function (i) { return { type: "image/jpeg", data: i.data }; }),
       caption: caption
@@ -337,7 +354,9 @@
             // 링크는 보통 넘겨 보는 사진 전체를 읽는다(via "carousel"). 인스타가 목록을 막으면 표지 1장만(via "cover") —
             // 그때만 캡처를 함께 올려 달라고 알려 준다
             var lk = res.link;
-            if (lk && lk.via === "carousel") notes.push("📸 게시물 사진 " + lk.imagesFromLink + "장을 모두 읽었어요.");
+            if (lk && lk.via === "carousel") notes.push(lk.photosInPost > lk.imagesFromLink
+              ? "📸 게시물 사진 " + lk.photosInPost + "장 중 앞쪽 " + lk.imagesFromLink + "장을 읽었어요. 뒤쪽 사진에만 나오는 곳이 있으면 캡처해서 함께 올려 주세요."
+              : "📸 게시물 사진 " + lk.imagesFromLink + "장을 모두 읽었어요.");
             else if (lk && !shots.length) notes.push("링크로는 첫 사진과 캡션만 읽었어요(인스타가 사진 목록을 막았어요). 사진을 넘겨 보는 게시물이면 각 사진을 캡처해서 함께 올려 주세요.");
             if (res.partialError) notes.push("일부는 읽지 못했어요: " + res.partialError);
             status.textContent = notes.join(" ");

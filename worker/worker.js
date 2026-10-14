@@ -16,6 +16,11 @@
  *   ANTHROPIC_API_KEY · CLAUDE_MODEL   PROVIDER=claude 일 때만
  */
 const MAX_IMAGES = 12;
+// 링크로 가져온 게시물은 앞쪽 6장만 분석한다 — 사진 장수만큼 하루 무료 분석량(Workers AI 뉴런)을 먹는다.
+// 7장짜리 게시물 40건 남짓에 하루치가 바닥났다(2026-10-14 실측). 장소 소개 게시물은 대개 앞쪽에 몰려 있다.
+const MAX_LINK_IMAGES = 6;
+// 같은 게시물 분석 결과는 30일 기억한다(Cache API · 데이터센터마다 따로라 전역 보장은 아니다). 앱도 따로 기억한다.
+const LINK_CACHE_TTL = 30 * 24 * 3600;
 const MAX_IMAGE_B64 = 4 * 1024 * 1024;      // 사진 1장 최대 ~3MB
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 const DEFAULT_AI_MODEL = "@cf/meta/llama-4-scout-17b-16e-instruct";
@@ -68,7 +73,7 @@ export default {
     try {
       const path = new URL(req.url).pathname;
       if (path === "/name") return json(await nameLookup(body, env));
-      if (path === "/link") return json(await analyzeLink(body, env));
+      if (path === "/link") return json(await cachedLink(body, env));
       return json(await analyzePost(body, env));
     } catch (e) {
       console.log("analyze error", String((e && e.stack) || e).slice(0, 500));
@@ -235,6 +240,25 @@ function toBase64(buf) {
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
   return btoa(bin);
 }
+/* 같은 게시물(shortcode 기준)은 다시 분석하지 않는다. 장소를 하나라도 찾은 결과만 기억한다(실패·0곳은 다시 시도할 수 있게). */
+async function cachedLink(body, env) {
+  const m = String(body.url || "").match(/instagram\.com\/(?:[\w.]+\/)?(?:p|reels?|tv)\/([\w-]+)/);
+  if (!m || typeof caches === "undefined") return analyzeLink(body, env);
+  const key = new Request(`https://akegazi-cache.invalid/link/${m[1]}`);
+  try {
+    const hit = await caches.default.match(key);
+    if (hit) { const v = await hit.json(); v.cached = true; return v; }
+  } catch {}
+  const out = await analyzeLink(body, env);
+  if (out && Array.isArray(out.places) && out.places.length) {
+    try {
+      await caches.default.put(key, new Response(JSON.stringify(out), {
+        headers: { "Content-Type": "application/json", "Cache-Control": `public, max-age=${LINK_CACHE_TTL}` },
+      }));
+    } catch {}
+  }
+  return out;
+}
 async function analyzeLink(body, env) {
   let u;
   try { u = new URL(String(body.url || "").trim()); } catch { throw fail("인스타 게시물 링크가 아니에요", 400); }
@@ -277,7 +301,7 @@ async function analyzeLink(body, env) {
 
   // 인스타 이미지 서버 주소만 받는다(다른 주소를 서버가 대신 열지 않게)
   const okHost = (x) => /^https:\/\/[\w.-]+\.(cdninstagram\.com|fbcdn\.net)\//.test(x);
-  const fetched = await Promise.all(photoUrls.filter(okHost).slice(0, MAX_IMAGES).map(async (src) => {
+  const fetched = await Promise.all(photoUrls.filter(okHost).slice(0, MAX_LINK_IMAGES).map(async (src) => {
     try {
       const ir = await fetch(src);
       const type = (ir.headers.get("content-type") || "image/jpeg").split(";")[0];

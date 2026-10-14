@@ -83,12 +83,20 @@
       throw (e && e.name === "AbortError") ? new Error("시간이 너무 오래 걸려요. 사진 수를 줄여보세요") : new Error("연결에 실패했어요");
     });
   }
+  /* 인스타는 서버 요청을 가끔 막는다(2026-10-14 실측 12번 중 2번 · 워커 안에서 다시 시도해도 같은 요청 안에서는
+   * 계속 막힌다). 새 요청은 대개 통하므로 "읽지 못했어요"(502)면 앱에서 두 번 더 보낸다. */
+  function postLink(url, tries) {
+    return post("/link", { url: url }).catch(function (e) {
+      if (tries >= 2 || !/읽지 못했어요/.test(String(e && e.message))) throw e;
+      return new Promise(function (r) { setTimeout(r, 800); }).then(function () { return postLink(url, tries + 1); });
+    });
+  }
   function sameKey(p) { return String(p.name || p.name_ko || "").toLowerCase().replace(/[^0-9a-z฀-๿가-힣]/g, ""); }
   /* 링크(캡션·표지)와 캡처 사진을 함께 분석해 합친다 → { places, link }
    * 링크만으로는 인스타가 첫 사진과 캡션만 내준다(넘겨 보는 사진은 로그인 벽 뒤) — link.imagesFromLink 로 안내한다. */
   function analyze(images, caption, url) {
     var jobs = [];
-    if (url) jobs.push(post("/link", { url: url }));
+    if (url) jobs.push(postLink(url, 0));
     if (images.length || (caption && !url)) jobs.push(post("/", {
       images: images.map(function (i) { return { type: "image/jpeg", data: i.data }; }),
       caption: caption

@@ -246,17 +246,25 @@ async function analyzeLink(body, env) {
   // 1) 브라우저처럼 요청하면 HTML 안에 캐러셀 전체(carousel_media)가 들어 있다(2026-09-28 실측 — 크롬 UA 에
   //    sec-fetch 헤더가 있어야 한다. UA 만 크롬이거나 헤더만 있으면 1MB 대신 64만 자짜리 빈 껍데기가 온다).
   // 2) 그게 막히면(출구 IP 에 따라 들쭉날쭉하다) 크롤러용 og 태그로 캡션 + 표지 1장.
+  // 3) 인스타는 같은 링크도 가끔 빈 껍데기를 준다(2026-10-14 실측 8번 중 1번) — 두 방식 모두 비면 잠깐 쉬고
+  //    처음부터 다시(최대 3회). 사용자에게 "못 읽었다"가 나가는 건 세 번 모두 실패했을 때뿐이다.
   const getHtml = (headers) => fetch(clean, { headers }).then((r) => (r.ok ? r.text() : ""), () => "");
-  let html = await getHtml({
+  const BROWSER = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
     "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document", "Sec-Fetch-Site": "none",
-  });
-  let photoUrls = carouselUrls(html);
-  let via = photoUrls.length ? "carousel" : "";
-  if (!metaContent(html, "og:description") && !photoUrls.length) {
-    html = await getHtml({ "User-Agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)", "Accept-Language": "ko,en;q=0.8" });
+  };
+  const CRAWLER = { "User-Agent": "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)", "Accept-Language": "ko,en;q=0.8" };
+  let html = "", photoUrls = [], via = "";
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt) await new Promise((r) => setTimeout(r, 700 * attempt));
+    html = await getHtml(BROWSER);
+    photoUrls = carouselUrls(html);
+    via = photoUrls.length ? "carousel" : "";
+    if (!metaContent(html, "og:description") && !photoUrls.length) html = await getHtml(CRAWLER);
+    // 표지 사진만 오고 캡션이 없는 응답도 반쪽이다(실측: 장소 0곳) — 캐러셀이나 캡션이 있어야 멈춘다
+    if (photoUrls.length || metaContent(html, "og:description")) break;
   }
   // og:description = '1,240 likes, 22 comments - 계정 on 날짜: "캡션"' → 따옴표 안만
   const desc = metaContent(html, "og:description") || metaContent(html, "og:title");

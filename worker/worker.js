@@ -224,11 +224,42 @@ async function analyzePost(body, env) {
  * 로그인 없이 서버가 받을 수 있는 건 크롤러용 og 태그(캡션·첫 사진)뿐이다.
  * 넘겨 보는 나머지 사진은 로그인 벽 뒤라 못 받는다(2026-09-27 실측 — 응답에 표지 1장만 있다).
  * 그래서 결과에 imagesFromLink 를 실어 화면이 "여러 장이면 캡처를 올려 달라"고 안내하게 한다. */
+function codePointOrEmpty(n) {
+  // 범위 밖·서로게이트는 fromCodePoint 가 예외를 던져 게시물 분석 전체가 502 가 된다.
+  if (!Number.isFinite(n) || n < 0 || n > 0x10FFFF || (n >= 0xD800 && n <= 0xDFFF)) return "";
+  return String.fromCodePoint(n);
+}
 function decodeEntities(s) {
   return String(s || "")
-    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
-    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(+d))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => codePointOrEmpty(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => codePointOrEmpty(+d))
     .replace(/&quot;/g, '"').replace(/&#039;|&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+}
+/* 인스타 이미지 서버만. 사용자 문자열을 그대로 fetch 하지 않고, 리다이렉트도 같은 호스트일 때만 따라간다. */
+function isAllowedImageUrl(raw) {
+  try {
+    const u = new URL(String(raw));
+    if (u.protocol !== "https:" || u.username || u.password) return false;
+    return /(^|\.)cdninstagram\.com$/i.test(u.hostname) || /(^|\.)fbcdn\.net$/i.test(u.hostname);
+  } catch { return false; }
+}
+function nextImageUrl(current, location) {
+  if (!location) return null;
+  try {
+    const next = new URL(location, current).href;
+    return isAllowedImageUrl(next) ? next : null;
+  } catch { return null; }
+}
+async function fetchImage(src, hops = 0) {
+  if (!isAllowedImageUrl(src) || hops > 3) return null;
+  let ir;
+  try { ir = await fetch(src, { redirect: "manual" }); }
+  catch { return null; }
+  if (ir.status >= 300 && ir.status < 400) {
+    const next = nextImageUrl(src, ir.headers.get("location"));
+    return next ? fetchImage(next, hops + 1) : null;
+  }
+  return ir;
 }
 function metaContent(html, prop) {
   const m = html.match(new RegExp(`<meta[^>]+(?:property|name)="${prop}"[^>]+content="([^"]*)"`, "i"));
@@ -299,11 +330,11 @@ async function analyzeLink(body, env) {
   }
   if (!cap && !photoUrls.length) throw fail("게시물을 읽지 못했어요(비공개이거나 인스타가 막았어요). 사진을 캡처해서 올려 주세요", 502);
 
-  // 인스타 이미지 서버 주소만 받는다(다른 주소를 서버가 대신 열지 않게)
-  const okHost = (x) => /^https:\/\/[\w.-]+\.(cdninstagram\.com|fbcdn\.net)\//.test(x);
-  const fetched = await Promise.all(photoUrls.filter(okHost).slice(0, MAX_LINK_IMAGES).map(async (src) => {
+  // 인스타 이미지 서버 주소만 받는다(다른 주소를 서버가 대신 열지 않게). 검사는 isAllowedImageUrl.
+  const fetched = await Promise.all(photoUrls.filter(isAllowedImageUrl).slice(0, MAX_LINK_IMAGES).map(async (src) => {
     try {
-      const ir = await fetch(src);
+      const ir = await fetchImage(src);
+      if (!ir) return null;
       const type = (ir.headers.get("content-type") || "image/jpeg").split(";")[0];
       if (!ir.ok || !IMAGE_TYPES.includes(type)) return null;
       const buf = await ir.arrayBuffer();
@@ -350,3 +381,5 @@ async function nameLookup(body, env) {
     .slice(0, 3);
   return { queries };
 }
+
+export { decodeEntities, isAllowedImageUrl, nextImageUrl };

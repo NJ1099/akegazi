@@ -30,6 +30,8 @@
     95: ["⛈️", "뇌우"], 96: ["⛈️", "우박 동반 뇌우"], 99: ["⛈️", "강한 우박 뇌우"]
   };
   function codeMeta(c) { return CODES[c] || ["🌡️", "—"]; }
+  /* null/undefined 는 null. 0° 는 그대로 둔다(Math.round(null) 이 0 이 되어 영하처럼 보이던 문제). */
+  function fmtTemp(v) { return (v == null || isNaN(v)) ? null : Math.round(v); }
 
   /* 하루치 날씨 조회 */
   function getWeather(lat, lon, date) {
@@ -128,7 +130,7 @@
 
   TP.weather = {
     getWeather: getWeather, getDayWeather: getDayWeather,
-    dayCoord: dayCoord, indoorPlan: indoorPlan, codeMeta: codeMeta,
+    dayCoord: dayCoord, indoorPlan: indoorPlan, codeMeta: codeMeta, fmtTemp: fmtTemp,
     RAIN_MM: RAIN_MM, RAIN_POP: RAIN_POP
   };
 })(window.TP = window.TP || {});

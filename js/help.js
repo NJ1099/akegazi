@@ -73,28 +73,48 @@
     ] }
   };
 
-  var openBack = null;
+  var openBack = null, prevFocus = null, prevOverflow = "";
+  function focusables(box) {
+    return U.$$('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])', box);
+  }
   function close() {
     if (!openBack) return;
     document.removeEventListener("keydown", onKey, true);
+    document.body.style.overflow = prevOverflow;
     if (openBack.parentNode) openBack.parentNode.removeChild(openBack);
     openBack = null;
+    if (prevFocus && prevFocus.focus) { try { prevFocus.focus(); } catch (e) {} }
+    prevFocus = null;
   }
   function onKey(e) {
-    if (e.key === "Escape") { e.stopPropagation(); e.preventDefault(); close(); }   // 아래 편집창까지 닫히지 않게
+    if (!openBack) return;
+    if (e.key === "Escape") { e.stopPropagation(); e.preventDefault(); close(); return; }   // 아래 편집창까지 닫히지 않게
+    if (e.key !== "Tab") return;
+    e.stopPropagation();   // 아래에 열린 편집창의 포커스 트랩이 Tab 을 가져가지 않게
+    var box = openBack.querySelector(".help");
+    var f = focusables(box || openBack);
+    if (!f.length) { e.preventDefault(); if (box) box.focus(); return; }
+    var first = f[0], last = f[f.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
   }
   function show(key) {
     var h = HELP[key]; if (!h) return;
+    var trigger = document.activeElement;   // close() 가 이전 팝업 포커스를 되돌리기 전에 잡아 둔다
     close();
+    prevFocus = trigger;
+    prevOverflow = document.body.style.overflow;
     var box = el("div.help", { role: "dialog", "aria-modal": "true", "aria-label": h.title + " 사용 설명", tabindex: "-1" }, [
       el("div.help__title", { text: "ⓘ " + h.title }),
       el("ul.help__list", null, h.lines.map(function (t) { return el("li", { text: t }); })),
       el("button.btn.btn--block", { onclick: close }, ["알겠어요"])
     ]);
     openBack = el("div.help-back", { onclick: function (e) { if (e.target === openBack) close(); } }, [box]);
+    document.body.style.overflow = "hidden";
     document.body.appendChild(openBack);
     document.addEventListener("keydown", onKey, true);
-    try { box.focus(); } catch (e) {}
+    var first = focusables(box)[0];
+    try { (first || box).focus(); } catch (e) {}
   }
   /* 제목 옆 ⓘ 버튼 — 부모(카드·줄)의 클릭으로 번지지 않게 막는다 */
   function btn(key) {

@@ -382,7 +382,8 @@
       chip.innerHTML = "";
       if (!wx.available) { chip.remove(); return; }   // 예보 없는 날은 빈 칩 대신 아무것도 안 보인다
       chip.appendChild(document.createTextNode(wx.emoji + " "));
-      chip.appendChild(el("span", { text: Math.round(wx.tmax) + "°/" + Math.round(wx.tmin) + "°" }));
+      var hi = W.fmtTemp(wx.tmax), lo = W.fmtTemp(wx.tmin);
+      chip.appendChild(el("span", { text: (hi == null ? "–" : hi) + "°/" + (lo == null ? "–" : lo) + "°" }));
       if (wx.precip != null && wx.precip > 0) chip.appendChild(el("span.mm", { text: " " + wx.precip + "mm" }));
       if (wx.rainy) { var p = chip.parentNode; if (p) p.appendChild(el("div.day-card__rainwarn", { text: "🌧️ 실내 위주" })); }
     });
@@ -417,9 +418,9 @@
     viewEl.appendChild(schedSlot);
 
     var mode = dayMode[day.id] || "timeline";
-    viewEl.appendChild(el("div.segmented", null, [
-      el("button" + (mode === "timeline" ? ".is-active" : ""), { onclick: function () { dayMode[day.id] = "timeline"; render(); } }, ["🗓 타임라인"]),
-      el("button" + (mode === "map" ? ".is-active" : ""), { onclick: function () { dayMode[day.id] = "map"; render(); } }, ["🗺 지도"])
+    viewEl.appendChild(el("div.segmented", { role: "group", "aria-label": "하루 보기" }, [
+      el("button" + (mode === "timeline" ? ".is-active" : ""), { "aria-pressed": mode === "timeline" ? "true" : "false", onclick: function () { dayMode[day.id] = "timeline"; render(); } }, ["🗓 타임라인"]),
+      el("button" + (mode === "map" ? ".is-active" : ""), { "aria-pressed": mode === "map" ? "true" : "false", onclick: function () { dayMode[day.id] = "map"; render(); } }, ["🗺 지도"])
     ]));
 
     var bodySlot = el("div");
@@ -641,15 +642,31 @@
     menu.style.top = (rect.bottom + 6) + "px";
     menu.style.right = Math.max(8, window.innerWidth - rect.right) + "px";
     anchor.setAttribute("aria-expanded", "true");
+    var firstItem = menu.querySelector("button");
+    if (firstItem) firstItem.focus();
     setTimeout(function () { document.addEventListener("click", onDocClick, true); document.addEventListener("keydown", onMenuKey); }, 0);
   }
   function onDocClick(e) { var m = U.$("#appbarMenu"); if (m && !m.contains(e.target)) closeMenu(); }
-  function onMenuKey(e) { if (e.key === "Escape") closeMenu(); }
+  function onMenuKey(e) {
+    if (e.key === "Escape") { e.preventDefault(); closeMenu(); return; }
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    var m = U.$("#appbarMenu"); if (!m) return;
+    var items = U.$$("button", m); if (!items.length) return;
+    e.preventDefault();
+    var i = items.indexOf(document.activeElement);
+    var n = e.key === "ArrowDown"
+      ? (i < 0 ? 0 : (i + 1) % items.length)
+      : (i < 0 ? items.length - 1 : (i - 1 + items.length) % items.length);
+    items[n].focus();
+  }
   function closeMenu() {
-    var m = U.$("#appbarMenu"); if (m) m.parentNode.removeChild(m);
+    var m = U.$("#appbarMenu");
+    var backToBtn = m && m.contains(document.activeElement);
+    if (m) m.parentNode.removeChild(m);
     if (menuBtn) menuBtn.setAttribute("aria-expanded", "false");
     document.removeEventListener("click", onDocClick, true);
     document.removeEventListener("keydown", onMenuKey);
+    if (backToBtn && menuBtn) { try { menuBtn.focus(); } catch (e) {} }
   }
 
   /* ---------- 구글 실거리 로드(교통비 정확도 → 재렌더로 반영) ---------- */

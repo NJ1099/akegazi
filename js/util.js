@@ -144,8 +144,26 @@
 
   function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n)); }
 
+  /* 보이는 라벨과 입력을 연결한다. 라벨을 누르면 칸으로 가고, 스크린 리더가 칸 이름을 읽는다.
+   * 입력이 아니면(칩 묶음 등) 묶음에 라벨을 붙인다. 이미 이름이 있으면 건드리지 않는다. */
+  function bindLabel(labelEl, control) {
+    if (!labelEl || !control || !control.getAttribute) return;
+    var target = (control.matches && control.matches("input,select,textarea"))
+      ? control
+      : (control.querySelector && control.querySelector("input,select,textarea"));
+    if (target) {
+      if (!target.id) target.id = uid();
+      labelEl.setAttribute("for", target.id);
+      return;
+    }
+    if (control.getAttribute("aria-label") || control.getAttribute("aria-labelledby")) return;
+    if (!labelEl.id) labelEl.id = uid();
+    if (!control.getAttribute("role")) control.setAttribute("role", "group");
+    control.setAttribute("aria-labelledby", labelEl.id);
+  }
+
   TP.util = {
-    $: $, $$: $$, el: el, esc: esc, uid: uid, debounce: debounce,
+    $: $, $$: $$, el: el, esc: esc, uid: uid, debounce: debounce, bindLabel: bindLabel,
     parseDate: parseDate, weekdayKo: weekdayKo, weekdayIdx: weekdayIdx,
     fmtDate: fmtDate, todayISO: todayISO, addDaysISO: addDaysISO,
     daysFromToday: daysFromToday, daysBetween: daysBetween, dateList: dateList, pad: pad, fetchJSON: fetchJSON,

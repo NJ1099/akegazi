@@ -69,6 +69,7 @@ body {
     radial-gradient(900px 500px at 90% 10%, #161033 0%, transparent 50%),
     var(--bg);
   min-height: 100vh;
+  min-height: 100dvh;   /* 모바일 주소창 높이를 빼서 페이지가 한 칸 더 길어지지 않게 */
 }
 
 button { font-family: inherit; cursor: pointer; }
@@ -78,6 +79,7 @@ a { color: inherit; }
   max-width: var(--maxw);
   margin: 0 auto;
   min-height: 100vh;
+  min-height: 100dvh;
   background: linear-gradient(180deg, var(--bg-2), var(--bg) 320px);
   position: relative;
   box-shadow: 0 0 0 1px var(--line), var(--shadow);
@@ -839,6 +841,7 @@ body { background: var(--bg); }
 /* 제목 */
 .trip-head { margin: 10px 0 18px; }
 .trip-head__title { font-size: 26px; font-weight: 800; letter-spacing: -.03em; color: var(--text); background: transparent; border: none; }
+.trip-head__title:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; border-radius: 8px; }
 .trip-head__meta { color: var(--text-3); font-size: 14px; }
 .empty { color: var(--text-3); }
 .empty__title { font-size: 20px; font-weight: 800; }
@@ -853,7 +856,7 @@ body { background: var(--bg); }
 .trip-card { padding: 20px; }
 .trip-card__title { font-size: 18px; font-weight: 700; }
 .trip-card__meta { color: var(--text-3); font-size: 14px; margin-top: 4px; }
-.card-del { background: transparent; border: none; color: #b0b8c1; }
+.card-del { background: transparent; border: none; color: #6b7684; }
 .card-del:hover { background: var(--c-red-bg); border: none; }
 
 /* 섹션 제목 + 오른쪽 텍스트 링크 */
@@ -1103,7 +1106,7 @@ div.list-row { cursor: default; }
 .pack-row.is-done .pack-row__box { background: var(--brand); border-color: var(--brand); }
 .pack-row.is-done .pack-row__text { color: var(--text-3); text-decoration: line-through; }
 .pack-row__text { min-width: 0; overflow-wrap: anywhere; }
-.pack-row__del { flex: 0 0 44px; height: 44px; margin-right: 8px; border: none; background: none; color: #b0b8c1; font-size: 14px; border-radius: 10px; }
+.pack-row__del { flex: 0 0 44px; height: 44px; margin-right: 8px; border: none; background: none; color: #6b7684; font-size: 14px; border-radius: 10px; }
 .pack-row__del:active { background: var(--c-red-bg); }
 .pack-add { display: flex; gap: 8px; margin-top: 12px; }
 .pack-add .input { flex: 1 1 auto; min-width: 0; }
@@ -1112,7 +1115,7 @@ div.list-row { cursor: default; }
 /* ⓘ 사용 설명 */
 .info-btn {
   display: inline-grid; place-items: center; width: 20px; height: 20px; margin-left: 6px; vertical-align: 2px;
-  border-radius: 999px; border: 1.5px solid #b0b8c1; background: transparent; color: #8b95a1;
+  border-radius: 999px; border: 1.5px solid #6b7684; background: transparent; color: #6b7684;
   font: 800 12px/1 Georgia, "Times New Roman", serif; font-style: italic; padding: 0; cursor: pointer; flex: 0 0 auto;
   position: relative;
 }

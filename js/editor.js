@@ -55,10 +55,9 @@
   }
 
   function field(labelText, control, hint) {
-    return el("div.field", null, [
-      el("label", null, [labelText, hint ? el("span.hint", { text: "  " + hint }) : null]),
-      control
-    ]);
+    var lab = el("label", null, [labelText, hint ? el("span.hint", { text: "  " + hint }) : null]);
+    U.bindLabel(lab, control);
+    return el("div.field", null, [lab, control]);
   }
 
   /* ---------- 장소 모달 ---------- */
@@ -87,7 +86,7 @@
     modal(function (box, close) {
       box.appendChild(el("div.modal__title", null, [wishMode ? (existing ? "보관함 장소" : "보관함에 담기") : existing ? "장소 편집" : (f.type === "lodging" && !dayId ? "숙소 추가" : "장소 추가"), TP.help.btn("stop")]));
 
-      // 이름 (입력하면 위치 자동 검색)
+      // 이름 — 위치 검색은 옆 ‘검색’ 버튼·엔터로만 (타이핑마다 나가지 않음)
       var results = el("div.geo-results");
       var titleInput = el("input.input", { value: f.title, placeholder: "예: 도쿄타워, 이치란 라멘", autocomplete: "off", oninput: function () { f.title = this.value; } });
       var pickedLabel = el("div.geo-picked", { html: "" });
@@ -107,6 +106,7 @@
       });
       box.appendChild(el("div.field", null, [typeWrap]));
       var nameLabel = el("label", { text: NAME_Q[f.type] || "어디에 가나요?" });
+      U.bindLabel(nameLabel, titleInput);
       // 검색은 버튼·엔터로만 한다 — 구글 검색은 모든 사용자가 하루 한도를 나눠 쓰므로 타이핑마다 나가면 금방 바닥난다
       var searchBtn = el("button.btn.btn--sm.search-row__btn", { type: "button", onclick: function () { searchSeq++; doSearch(); } }, ["🔎 검색"]);
       box.appendChild(el("div.field", null, [nameLabel, el("div", null, [el("div.search-row", null, [titleInput, searchBtn]), results, pickedLabel])]));
@@ -525,7 +525,9 @@
   }
 
   function wrapLabeled(label, control) {
-    return el("div", null, [el("label", { style: { display: "block", fontSize: "12px", fontWeight: "800", color: "var(--text-2)", marginBottom: "6px" }, text: label }), control]);
+    var lab = el("label", { style: { display: "block", fontSize: "12px", fontWeight: "800", color: "var(--text-2)", marginBottom: "6px" }, text: label });
+    U.bindLabel(lab, control);
+    return el("div", null, [lab, control]);
   }
   // HH:MM 수동 입력(시간 휠 없이 직접 타이핑). 1300 → 13:00 자동 콜론. 커서 위치 보존 + blur 시 보정.
   function timeInput(val, onset) {

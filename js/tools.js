@@ -191,17 +191,23 @@
       function drawConv() { var v = parseFloat(amt.value); conv.textContent = (isFinite(v) && v > 0) ? M.formatConv(v, cur, home) : ""; }
       amt.addEventListener("input", function () { var v = parseFloat(amt.value); f.amount = (isFinite(v) && v > 0) ? v : null; drawConv(); });
       drawConv();
-      box.appendChild(el("div.field", null, [el("label", { text: "얼마 썼나요?" }), amt, conv]));
+      var amtLab = el("label", { text: "얼마 썼나요?" });
+      U.bindLabel(amtLab, amt);
+      box.appendChild(el("div.field", null, [amtLab, amt, conv]));
 
-      box.appendChild(el("div.field", null, [el("label", { text: "어디에?" }),
-        el("input.input", { value: f.title, placeholder: "예: 저녁 라멘, 택시, 기념품", maxlength: "60", oninput: function () { f.title = this.value; } })]));
+      var titleLab = el("label", { text: "어디에?" });
+      var titleIn = el("input.input", { value: f.title, placeholder: "예: 저녁 라멘, 택시, 기념품", maxlength: "60", oninput: function () { f.title = this.value; } });
+      U.bindLabel(titleLab, titleIn);
+      box.appendChild(el("div.field", null, [titleLab, titleIn]));
 
       var dateSel = el("select.select", { "aria-label": "날짜", onchange: function () { f.date = this.value; } },
         [el("option", { value: "", text: "날짜 없음" })].concat(trip.days.map(function (d, i) {
           return el("option", { value: d.date, text: "Day " + (i + 1) + (d.date ? " · " + U.fmtDate(d.date) : "") });
         })));
       dateSel.value = f.date || "";
-      box.appendChild(el("div.field", null, [el("label", { text: "언제?" }), dateSel]));
+      var dateLab = el("label", { text: "언제?" });
+      U.bindLabel(dateLab, dateSel);
+      box.appendChild(el("div.field", null, [dateLab, dateSel]));
 
       if (many) {
         var payWrap = el("div.chips");
@@ -210,7 +216,9 @@
             f.payer = m; U.$$(".chip", payWrap).forEach(function (x) { x.classList.remove("is-on"); }); this.classList.add("is-on");
           } }, [m]));
         });
-        box.appendChild(el("div.field", null, [el("label", { text: "누가 냈나요?" }), payWrap]));
+        var payLab = el("label", { text: "누가 냈나요?" });
+        U.bindLabel(payLab, payWrap);
+        box.appendChild(el("div.field", null, [payLab, payWrap]));
         var splitWrap = el("div.chips");
         trip.members.forEach(function (m) {
           splitWrap.appendChild(el("button.chip" + (f.split.indexOf(m) >= 0 ? ".is-on" : ""), { type: "button", onclick: function () {
@@ -218,7 +226,9 @@
             if (i >= 0) { f.split.splice(i, 1); this.classList.remove("is-on"); } else { f.split.push(m); this.classList.add("is-on"); }
           } }, [m]));
         });
-        box.appendChild(el("div.field", null, [el("label", null, ["누구랑 나눴나요?", el("span.hint", { text: "  고른 사람끼리 똑같이 나눠요" })]), splitWrap]));
+        var splitLab = el("label", null, ["누구랑 나눴나요?", el("span.hint", { text: "  고른 사람끼리 똑같이 나눠요" })]);
+        U.bindLabel(splitLab, splitWrap);
+        box.appendChild(el("div.field", null, [splitLab, splitWrap]));
       }
 
       box.appendChild(el("div.modal__actions", null, [
